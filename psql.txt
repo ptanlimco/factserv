@@ -1,0 +1,75 @@
+sudo -u postgres psql
+
+create database factory;
+\c factory
+
+\l      list databases
+\df     list functions
+\sf xx  show function xx
+\d      list tables
+
+create type states as enum('TESTING','FAILED','PASSED','COMPLETE');
+
+create or replace function uct() returns timestamp as $$ select now() at time zone 'uct'; $$ language sql;
+
+create or replace function updated() returns trigger as $$ begin new.updated=uct(); return new; end; $$ language plpgsql;
+
+# test state, per device
+create table devices (
+    deviceid varchar unique primary key,
+    buildid varchar,	
+    boardid varchar,
+    created timestamp not null default uct(),
+    updated timestamp not null default uct(),
+    state states not null default 'TESTING',
+);
+
+create trigger updated before update on devices for each row execute procedure updated();
+
+# provisioned data, per device
+create table provisioned (
+    deviceid varchar unique,
+    backhauled boolean default false,
+    _mac1 macaddr
+);:
+
+# all supported stations
+create table stations (
+    station int unique not null check (station > 0 and station <= 200),
+    mac macaddr unique not null,
+    comment varchar	
+);
+
+# test results, per test, per device
+create table tests (
+    id serial unique not null,
+    deviceid varchar not null primary key,
+    started timestamp not null default uct(),
+    ended timestamp,
+    station int not null,
+    phase int not null,
+    testname varchar not null,
+    command varchar not null,
+    status int,
+    stdout varchar
+);
+
+create table builds (
+    buildid varchar unique not null,
+    provision boolean default false,
+    filename varchar not null,
+    phase1 int array,
+    phase2 int array,
+    phase3 int array,
+    phase4 int array,
+    comment varchar		
+);
+
+# process CGIs
+create user factory;
+grant select, update, insert, trigger on devices to factory;
+grant select, update, insert, trigger on tests to factory;
+grant select, update, insert, trigger on provisions to factory; 
+# admin CGIs
+grant select, update, insert, delete, trigger on builds to factory; 
+grant select, update, insert, delete, trigger on stations to factory; 
