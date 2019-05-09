@@ -1,239 +1,236 @@
 #!/usr/bin/python
 
-import cgi, cgitb, psycopg2, re
-cgitb.enable()
+try:
 
-# start the page
-print """Content-type: text/html
+    import traceback, re, cgi, psycopg2
 
-<!DOCTYPE html>
-<html>
-<head>
-<title>Build Manager</title>
-<style>
-    input { font-family:monospace }
-</style>    
-</head>
-<body>
-<tt>
-<h2>Build Manager</h2>
-"""
+    content=""
 
-# Schema:
-# create table builds (
-#    buildid varchar unique not null,
-#    provision boolean default false,
-#    filename varchar not null,
-#    phase1 int array,
-#    phase2 int array,
-#    phase3 int array,
-#    phase4 int array,
-#    comment varchar
-# );
+    # return html string with escaped values inserted
+    def hstring(string, values):
+        return string % ("" if s is None else cgi.escape(str(s),True) for s in values)
 
-# return html string with escaped values inserted
-def hstring(string, values):
-    return string % ("" if s is None else cgi.escape(str(s),True) for s in values)
-
-# return html form with specified defaults
-def makeform(values):
-    if not values:
-        values=tuple([None for n in range(37)])
-    return hstring("""
-        <table>
-            <tr><td>Build ID</td>   <td><input name=buildid type=text value="%s"></td></tr>
-            <tr><td>Provision?</td> <td><input name=provision type=checkbox value=true %s></td></tr> 
-            <tr><td>Filename</td>   <td><input name=filename type=text value="%s"></td></tr> 
-            <tr><td>Phase 1</td>     
-                <td>
-                    <input name=phase1-1 type=text size=4 value="%s">
-                    <input name=phase1-2 type=text size=4 value="%s">
-                    <input name=phase1-3 type=text size=4 value="%s">
-                    <input name=phase1-4 type=text size=4 value="%s">
-                    <input name=phase1-5 type=text size=4 value="%s">
-                    <input name=phase1-6 type=text size=4 value="%s">
-                    <input name=phase1-7 type=text size=4 value="%s">
-                    <input name=phase1-8 type=text size=4 value="%s">
-                </td></tr> 
-            <tr><td>Phase 2</td>     
-                <td>
-                    <input name=phase2-1 type=text size=4 value="%s">
-                    <input name=phase2-2 type=text size=4 value="%s">
-                    <input name=phase2-3 type=text size=4 value="%s">
-                    <input name=phase2-4 type=text size=4 value="%s">
-                    <input name=phase2-5 type=text size=4 value="%s">
-                    <input name=phase2-6 type=text size=4 value="%s">
-                    <input name=phase2-7 type=text size=4 value="%s">
-                    <input name=phase2-8 type=text size=4 value="%s">
-                </td></tr> 
-            <tr><td>Phase 3</td>     
-                <td>
-                    <input name=phase3-1 type=text size=4 value="%s">
-                    <input name=phase3-2 type=text size=4 value="%s">
-                    <input name=phase3-3 type=text size=4 value="%s">
-                    <input name=phase3-4 type=text size=4 value="%s">
-                    <input name=phase3-5 type=text size=4 value="%s">
-                    <input name=phase3-6 type=text size=4 value="%s">
-                    <input name=phase3-7 type=text size=4 value="%s">
-                    <input name=phase3-8 type=text size=4 value="%s">
-                </td></tr> 
-            <tr><td>Phase 4</td>
-                <td>
-                    <input name=phase4-1 type=text size=4 value="%s">
-                    <input name=phase4-2 type=text size=4 value="%s">
-                    <input name=phase4-3 type=text size=4 value="%s">
-                    <input name=phase4-4 type=text size=4 value="%s">
-                    <input name=phase4-5 type=text size=4 value="%s">
-                    <input name=phase4-6 type=text size=4 value="%s">
-                    <input name=phase4-7 type=text size=4 value="%s">
-                    <input name=phase4-8 type=text size=4 value="%s">
-                </td></tr> 
-            <tr><td>Comment</td>   <td><input name=comment type=text value="%s"></td></tr> 
-        </table>""", values)
-
-# return list of values created by the above form
-def formvalues(form):
-    return (   
-        form.getvalue('buildid'),
-        form.getvalue('provision'),
-        form.getvalue('filename'),
-        form.getvalue('phase1-1'), form.getvalue('phase1-2'), form.getvalue('phase1-3'), form.getvalue('phase1-4'), form.getvalue('phase1-5'), form.getvalue('phase1-6'), form.getvalue('phase1-7'), form.getvalue('phase1-8'),
-        form.getvalue('phase2-1'), form.getvalue('phase2-2'), form.getvalue('phase2-3'), form.getvalue('phase2-4'), form.getvalue('phase2-5'), form.getvalue('phase2-6'), form.getvalue('phase2-7'), form.getvalue('phase2-8'),
-        form.getvalue('phase3-1'), form.getvalue('phase3-2'), form.getvalue('phase3-3'), form.getvalue('phase3-4'), form.getvalue('phase3-5'), form.getvalue('phase3-6'), form.getvalue('phase3-7'), form.getvalue('phase3-8'),
-        form.getvalue('phase4-1'), form.getvalue('phase4-2'), form.getvalue('phase4-3'), form.getvalue('phase4-4'), form.getvalue('phase4-5'), form.getvalue('phase4-6'), form.getvalue('phase4-7'), form.getvalue('phase4-8'),
-        form.getvalue('comment')
-    )
-
-for _ in (True,):
+    # return html form with specified defaults
+    def makeform(values):
+        if not values:
+            values=tuple([None for n in range(37)])
+            
+        return hstring("""
+            <table>
+                <tr><td>Build ID</td>   <td><input name=buildid type=text value="%s"></td></tr>
+                <tr><td>Provision?</td> <td><input name=provision type=checkbox value=true %s></td></tr> 
+                <tr><td>Filename</td>   <td><input name=filename type=text value="%s"></td></tr> 
+                <tr><td>Phase 1</td>     
+                    <td>
+                        <input name=phase1-1 type=text size=4 value="%s">
+                        <input name=phase1-2 type=text size=4 value="%s">
+                        <input name=phase1-3 type=text size=4 value="%s">
+                        <input name=phase1-4 type=text size=4 value="%s">
+                        <input name=phase1-5 type=text size=4 value="%s">
+                        <input name=phase1-6 type=text size=4 value="%s">
+                        <input name=phase1-7 type=text size=4 value="%s">
+                        <input name=phase1-8 type=text size=4 value="%s">
+                    </td></tr> 
+                <tr><td>Phase 2</td>     
+                    <td>
+                        <input name=phase2-1 type=text size=4 value="%s">
+                        <input name=phase2-2 type=text size=4 value="%s">
+                        <input name=phase2-3 type=text size=4 value="%s">
+                        <input name=phase2-4 type=text size=4 value="%s">
+                        <input name=phase2-5 type=text size=4 value="%s">
+                        <input name=phase2-6 type=text size=4 value="%s">
+                        <input name=phase2-7 type=text size=4 value="%s">
+                        <input name=phase2-8 type=text size=4 value="%s">
+                    </td></tr> 
+                <tr><td>Phase 3</td>     
+                    <td>
+                        <input name=phase3-1 type=text size=4 value="%s">
+                        <input name=phase3-2 type=text size=4 value="%s">
+                        <input name=phase3-3 type=text size=4 value="%s">
+                        <input name=phase3-4 type=text size=4 value="%s">
+                        <input name=phase3-5 type=text size=4 value="%s">
+                        <input name=phase3-6 type=text size=4 value="%s">
+                        <input name=phase3-7 type=text size=4 value="%s">
+                        <input name=phase3-8 type=text size=4 value="%s">
+                    </td></tr> 
+                <tr><td>Phase 4</td>
+                    <td>
+                        <input name=phase4-1 type=text size=4 value="%s">
+                        <input name=phase4-2 type=text size=4 value="%s">
+                        <input name=phase4-3 type=text size=4 value="%s">
+                        <input name=phase4-4 type=text size=4 value="%s">
+                        <input name=phase4-5 type=text size=4 value="%s">
+                        <input name=phase4-6 type=text size=4 value="%s">
+                        <input name=phase4-7 type=text size=4 value="%s">
+                        <input name=phase4-8 type=text size=4 value="%s">
+                    </td></tr> 
+                <tr><td>Comment</td>   <td><input name=comment type=text value="%s"></td></tr> 
+            </table>""", values)
+    
+    # return list of values created by the above form
+    def formvalues(form):
+        return (   
+            form.getvalue('buildid'),
+            form.getvalue('provision'),
+            form.getvalue('filename'),
+            form.getvalue('phase1-1'), form.getvalue('phase1-2'), form.getvalue('phase1-3'), form.getvalue('phase1-4'), form.getvalue('phase1-5'), form.getvalue('phase1-6'), form.getvalue('phase1-7'), form.getvalue('phase1-8'),
+            form.getvalue('phase2-1'), form.getvalue('phase2-2'), form.getvalue('phase2-3'), form.getvalue('phase2-4'), form.getvalue('phase2-5'), form.getvalue('phase2-6'), form.getvalue('phase2-7'), form.getvalue('phase2-8'),
+            form.getvalue('phase3-1'), form.getvalue('phase3-2'), form.getvalue('phase3-3'), form.getvalue('phase3-4'), form.getvalue('phase3-5'), form.getvalue('phase3-6'), form.getvalue('phase3-7'), form.getvalue('phase3-8'),
+            form.getvalue('phase4-1'), form.getvalue('phase4-2'), form.getvalue('phase4-3'), form.getvalue('phase4-4'), form.getvalue('phase4-5'), form.getvalue('phase4-6'), form.getvalue('phase4-7'), form.getvalue('phase4-8'),
+            form.getvalue('comment')
+        )
+    
     conn=psycopg2.connect('dbname=factory')
     cur=conn.cursor()
     form=cgi.FieldStorage();
-
-    if 'action' in form:
-        action = form.getvalue('action').split('=',2)
-        if action[0] == 'new':
-            print "<form>" + makeform(None) + """
-                <hr>
-                    <button name=action value=insert>Update</button>
+   
+    # single-pass loop so break will work
+    for _ in (True,):
+        if 'action' in form:
+            action = form.getvalue('action').split('=',2)
+            if action[0] == 'new':
+                content += "<form>" + makeform(None) + """
+                    <hr>
+                        <button name=action value=insert>Update</button>
+                        <button>Cancel</button>
+                    </form>
+                    """
+                break
+            elif action[0] == 'insert':
+                cur.execute("""
+                    insert into builds (buildid, provision, filename, 
+                    phase1[1], phase1[2], phase1[3], phase1[4], phase1[5], phase1[6], phase1[7], phase1[8],
+                    phase2[1], phase2[2], phase2[3], phase2[4], phase2[5], phase2[6], phase2[7], phase2[8],
+                    phase3[1], phase3[2], phase3[3], phase3[4], phase3[5], phase3[6], phase3[7], phase3[8],
+                    phase4[1], phase4[2], phase4[3], phase4[4], phase4[5], phase4[6], phase4[7], phase4[8],
+                    comment) 
+                    values (%s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s, %s)
+                    """, formvalues(form))    
+                conn.commit()
+            elif action[0] == 'del':
+                content += hstring("""
+                    <table>
+                        <tr><td>Really delete build ID "%s"?</td>
+                            <td>
+                                <form method=post>
+                                    <button name=action value="really=%s">Yes</button>
+                                </form>
+                             </td>
+                             <td>
+                                <form method=post>
+                                    <button>No</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <table>               
+                """, (action[1],action[1]))
+                break
+            elif action[0] == 'really':
+                    cur.execute('delete from builds where buildid=%s', (action[1],));
+                    conn.commit()
+            elif action[0] == 'edit':
+                cur.execute("""
+                    select buildid, case when provision then 'checked' else '' end, filename,
+                    phase1[1], phase1[2], phase1[3], phase1[4], phase1[5], phase1[6], phase1[7], phase1[8],
+                    phase2[1], phase2[2], phase2[3], phase2[4], phase2[5], phase2[6], phase2[7], phase2[8],
+                    phase3[1], phase3[2], phase3[3], phase3[4], phase3[5], phase3[6], phase3[7], phase3[8],
+                    phase4[1], phase4[2], phase4[3], phase4[4], phase4[5], phase4[6], phase4[7], phase4[8],
+                    comment from builds where buildid = %s
+                    """, (action[1],))
+                row = cur.fetchone();
+                content += hstring("<form>" +
+                    makeform(row) +
+                    """
+                    <hr>
+                    <button name=action value='update=%s'>Update</button>
                     <button>Cancel</button>
-                </form>
+                    </form>
+                    """ % (cgi.escape(str(row[0]),True),))
+                break
+            elif action[0] == 'update':
+                cur.execute("""
+                    update builds set buildid=%s, provision=%s, filename=%s,
+                    phase1[1]=%s, phase1[2]=%s, phase1[3]=%s, phase1[4]=%s, phase1[5]=%s, phase1[6]=%s, phase1[7]=%s, phase1[8]=%s,
+                    phase2[1]=%s, phase2[2]=%s, phase2[3]=%s, phase2[4]=%s, phase2[5]=%s, phase2[6]=%s, phase2[7]=%s, phase2[8]=%s,
+                    phase3[1]=%s, phase3[2]=%s, phase3[3]=%s, phase3[4]=%s, phase3[5]=%s, phase3[6]=%s, phase3[7]=%s, phase3[8]=%s,
+                    phase4[1]=%s, phase4[2]=%s, phase4[3]=%s, phase4[4]=%s, phase4[5]=%s, phase4[6]=%s, phase4[7]=%s, phase4[8]=%s,
+                    comment=%s where buildid=%s
+                    """, formvalues(form)+(action[1],))    
+                conn.commit()
+            else:
+                raise Exception('Invalid action = "%s"' % action);
+    
+        # here, generate thge default page contentt
+        cur.execute("""
+            select buildid, case when provision then 'Yes' else 'No' end, filename,
+            phase1[1], phase1[2], phase1[3], phase1[4], phase1[5], phase1[6], phase1[7], phase1[8],
+            phase2[1], phase2[2], phase2[3], phase2[4], phase2[5], phase2[6], phase2[7], phase2[8],
+            phase3[1], phase3[2], phase3[3], phase3[4], phase3[5], phase3[6], phase3[7], phase3[8],
+            phase4[1], phase4[2], phase4[3], phase4[4], phase4[5], phase4[6], phase4[7], phase4[8],
+            comment from builds order by buildid
+            """)
+    
+        if cur.rowcount > 0:
+            content += """
+                <table border=1>
+                <tr>
+                    <th>Build ID</th>
+                    <th>Provision?</th>
+                    <th>Filename</th>
+                    <th>Phase 1</th>
+                    <th>Phase 2</th>
+                    <th>Phase 3</th>
+                    <th>Phase 4</th>
+                    <th>Comment</th>
+                    <th>&nbsp;</th>
+                </tr>
                 """
-            break
-        elif action[0] == 'insert':
-            cur.execute("""
-                insert into builds (buildid, provision, filename, 
-                phase1[1], phase1[2], phase1[3], phase1[4], phase1[5], phase1[6], phase1[7], phase1[8],
-                phase2[1], phase2[2], phase2[3], phase2[4], phase2[5], phase2[6], phase2[7], phase2[8],
-                phase3[1], phase3[2], phase3[3], phase3[4], phase3[5], phase3[6], phase3[7], phase3[8],
-                phase4[1], phase4[2], phase4[3], phase4[4], phase4[5], phase4[6], phase4[7], phase4[8],
-                comment) 
-                values (%s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s, %s)
-                """, formvalues(form))    
-            conn.commit()
-        elif action[0] == 'del':
-            print hstring("""
-                <table>
-                    <tr><td>Really delete build ID "%s"?</td>
+            for row in cur:
+                content += hstring("""
+                    <tr><td>%s</td>
+                        <td>%s</td>
+                        <td>%s</td>
+                        <td>%s %s %s %s %s %s %s %s</td>
+                        <td>%s %s %s %s %s %s %s %s</td>
+                        <td>%s %s %s %s %s %s %s %s</td>
+                        <td>%s %s %s %s %s %s %s %s</td>
+                        <td>%s</td>
                         <td>
                             <form method=post>
-                                <button name=action value="really=%s">Yes</button>
-                            </form>
-                         </td>
-                         <td>
-                            <form method=post>
-                                <button>No</button>
+                                <button name=action value='edit=%s'>Edit</button>
+                                <button name=action value='del=%s'>Del</button>
                             </form>
                         </td>
                     </tr>
-                <table>               
-            """, (action[1],action[1]))
-            break
-        elif action[0] == 'really':
-                cur.execute('delete from builds where buildid=%s', (action[1],));
-                conn.commit()
-        elif action[0] == 'edit':
-            cur.execute("""
-                select buildid, case when provision then 'checked' else '' end, filename,
-                phase1[1], phase1[2], phase1[3], phase1[4], phase1[5], phase1[6], phase1[7], phase1[8],
-                phase2[1], phase2[2], phase2[3], phase2[4], phase2[5], phase2[6], phase2[7], phase2[8],
-                phase3[1], phase3[2], phase3[3], phase3[4], phase3[5], phase3[6], phase3[7], phase3[8],
-                phase4[1], phase4[2], phase4[3], phase4[4], phase4[5], phase4[6], phase4[7], phase4[8],
-                comment from builds where buildid = %s
-                """, (action[1],))
-            row = cur.fetchone();
-            print hstring("<form>" +
-                makeform(row) +
-                """
-                <hr>
-                <button name=action value='update=%s'>Update</button>
-                <button>Cancel</button>
-                </form>
-                """ % (cgi.escape(str(row[0]),True),))
-            break
-        elif action[0] == 'update':
-            cur.execute("""
-                update builds set buildid=%s, provision=%s, filename=%s,
-                phase1[1]=%s, phase1[2]=%s, phase1[3]=%s, phase1[4]=%s, phase1[5]=%s, phase1[6]=%s, phase1[7]=%s, phase1[8]=%s,
-                phase2[1]=%s, phase2[2]=%s, phase2[3]=%s, phase2[4]=%s, phase2[5]=%s, phase2[6]=%s, phase2[7]=%s, phase2[8]=%s,
-                phase3[1]=%s, phase3[2]=%s, phase3[3]=%s, phase3[4]=%s, phase3[5]=%s, phase3[6]=%s, phase3[7]=%s, phase3[8]=%s,
-                phase4[1]=%s, phase4[2]=%s, phase4[3]=%s, phase4[4]=%s, phase4[5]=%s, phase4[6]=%s, phase4[7]=%s, phase4[8]=%s,
-                comment=%s where buildid=%s
-                """, formvalues(form)+(action[1],))    
-            conn.commit()
+                    """, row+(row[0],row[0]))
+            content += '</table>'
         else:
-            raise Exception('Invalid action = "%s"' % action);
-
-    cur.execute("""
-        select buildid, case when provision then 'Yes' else 'No' end, filename,
-        phase1[1], phase1[2], phase1[3], phase1[4], phase1[5], phase1[6], phase1[7], phase1[8],
-        phase2[1], phase2[2], phase2[3], phase2[4], phase2[5], phase2[6], phase2[7], phase2[8],
-        phase3[1], phase3[2], phase3[3], phase3[4], phase3[5], phase3[6], phase3[7], phase3[8],
-        phase4[1], phase4[2], phase4[3], phase4[4], phase4[5], phase4[6], phase4[7], phase4[8],
-        comment from builds order by buildid
-        """)
-
-    if cur.rowcount > 0:
-        print """
-            <table border=1>
-            <tr>
-                <th>Build ID</th>
-                <th>Provision?</th>
-                <th>Filename</th>
-                <th>Phase 1</th>
-                <th>Phase 2</th>
-                <th>Phase 3</th>
-                <th>Phase 4</th>
-                <th>Comment</th>
-                <th>&nbsp;</th>
-            </tr>
+            content += 'No builds defined'
+    
+        content += """
+            <hr>
+            <form method=post>
+                <button name=action value=new>New station</button>
+            </form>
             """
-        for row in cur:
-            print hstring("""
-                <tr><td>%s</td>
-                    <td>%s</td>
-                    <td>%s</td>
-                    <td>%s %s %s %s %s %s %s %s</td>
-                    <td>%s %s %s %s %s %s %s %s</td>
-                    <td>%s %s %s %s %s %s %s %s</td>
-                    <td>%s %s %s %s %s %s %s %s</td>
-                    <td>%s</td>
-                    <td>
-                        <form method=post>
-                            <button name=action value='edit=%s'>Edit</button>
-                            <button name=action value='del=%s'>Del</button>
-                        </form>
-                    </td>
-                </tr>
-                """, row+(row[0],row[0]))
-        print '</table>'
-    else:
-        print 'No builds defined'
 
-    print """
-        <hr>
-        <form method=post>
-            <button name=action value=new>New station</button>
-        </form>
-        """
+    # print generated content
+    print """Content-type: text/html
 
-print "</tt></body></html>"
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <title>Build Manager</title>
+    <style>
+        input { font-family:monospace }
+    </style>    
+    </head>
+    <body>
+    <tt>
+    <h2>Build Manager</h2>
+    """ + content + "</tt></body></html>"
+
+# errors are reported in plain-text
+except:
+    print "Content-type: text/plan\n\nSorry, an error has occurred.\n"
+    traceback.print_exc()
