@@ -1,122 +1,150 @@
 #!/usr/bin/python
 
-import cgi, cgitb, psycopg2, re
-cgitb.enable()
-# start the page
-print """Content-type: text/html
+try:
 
-<!DOCTYPE html>
-<html>
-<head>
-<title>Test Station Manager</title>
-</head>
-<body>
-<h2>Test Station Manager</h2>
-"""
+    import traceback, re, cgi, sys, psycopg2
 
-for _ in (True,):
+    # return html string with escaped values inserted, redundant whitespace removed
+    def html(string, values):
+        if values is not None:
+            string = string % tuple("" if s is None else cgi.escape(str(s),True) for s in values)
+        return ' '.join(string.split())
+
     conn=psycopg2.connect('dbname=factory')
     cur=conn.cursor()
     form=cgi.FieldStorage();
+    content=""
 
-    if 'action' in form:
-        action = form.getvalue('action').split(' ');
-        if action[0] == 'new':
-            print """
-                <form method=post>
+    for _ in (True,):
+        if 'action' in form:
+            action = form.getvalue('action').split(' ');
+            if action[0] == 'new':
+                content += html("""
+                    <form method=post>
+                        <table>
+                            <tr><td>Station ID</td> <td><input name=station type=text></td></tr>
+                            <tr><td>Station Mac</td><td><input name=mac type=text></td>    </tr> 
+                            <tr><td>Commeent</td>   <td><input name=comment type=text></td></tr> 
+                        </table>
+                        <hr>
+                        <button name=action value=insert>Update</button>
+                        <button>Cancel</button>
+                    </form>
+                    """,None)
+                break
+            elif action[0] == 'insert':
+                    cur.execute('insert into stations (station,mac,comment) values(%s,%s,%s)', 
+                        (form.getvalue('station'),form.getvalue('mac'),form.getvalue('comment')))
+                    conn.commit()
+            elif action[0] == 'del':
+                content += html("""
                     <table>
-                        <tr><td>Station ID</td> <td><input name=station type=text></td></tr>
-                        <tr><td>Station Mac</td><td><input name=mac type=text></td>    </tr> 
-                        <tr><td>Commeent</td>   <td><input name=comment type=text></td></tr> 
-                    </table>
-                    <hr>
-                    <button name=action value=insert>Update</button>
-                    <button>Cancel</button>
-                </form>
-                """
-            break
-        elif action[0] == 'insert':
-                cur.execute('insert into stations (station,mac,comment) values(%s,%s,%s)', 
-                    (form.getvalue('station'),form.getvalue('mac'),form.getvalue('comment')))
+                        <tr><td>Really delete station %s?</td>
+                            <td>
+                                <form method=post>
+                                    <button name=action value="really %s">Yes</button>
+                                </form>
+                             </td>
+                             <td>
+                                <form method=post>
+                                    <button>No</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <table>               
+                """, (action[1],action[1]))
+                break
+            elif action[0] == 'really':
+                    cur.execute('delete from stations where station=%s', (action[1],));
+                    conn.commit()
+            elif action[0] == 'edit':
+                cur.execute('select station, mac, comment from stations where station = %s', (action[1],));
+                row = cur.fetchone();
+                content += html("""
+                    <form method=post>
+                        <table>
+                            <tr><td>Station IP</td> <td><input name=station type=text value="%s"></td>  </tr>
+                            <tr><td>Station MAC</td><td><input name=mac type=text value="%s"></td>      </tr>
+                            <tr><td>Comment</td>    <td><input name=comment type=text value="%s"></td>   </tr>
+                        </table>
+                        <hr>
+                        <button name=action value="update %s">Update</button>
+                        <button>Cancel</button>
+                    </form>
+                    """, (row+(row[0],)))
+                break
+            elif action[0] == 'update':
+                cur.execute('update stations set station=%s, mac=%s, comment=%s where station=%s',
+                    (form.getvalue('station'),form.getvalue('mac'),form.getvalue('comment'),action[1]))
                 conn.commit()
-        elif action[0] == 'del':
-            print """
-                <table>
-                    <tr><td>Really delete station %s?</td>
+            else:
+                raise Exception('Invalid action = "%s"' % action);
+
+        cur.execute('select station,mac,comment from stations order by station')
+
+        if cur.rowcount > 0:
+            content += html("""
+                <table border=1>
+                <tr>
+                    <th>Station</th>
+                    <th>MAC</th>
+                    <th>Comment</th>
+                    <th>&nbsp;</th>
+                </tr>
+                """,None)
+            for row in cur:
+                content += html("""
+                    <tr><td>%s</td>
+                        <td>%s</td>
+                        <td>%s</td>
                         <td>
                             <form method=post>
-                                <button name=action value='really %s'>Yes</button>
-                            </form>
-                         </td>
-                         <td>
-                            <form method=post>
-                                <button>No</button>
+                                <button name=action value='edit %s'>Edit</button>
+                                <button name=action value='del %s'>Del</button>
                             </form>
                         </td>
                     </tr>
-                <table>               
-            """ % (action[1],action[1])
-            break
-        elif action[0] == 'really':
-                cur.execute('delete from stations where station=%s', (action[1],));
-                conn.commit()
-        elif action[0] == 'edit':
-            cur.execute('select station, mac, comment from stations where station = %s', (action[1],));
-            row = cur.fetchone();
-            print """
-                <form method=post>
-                    <table>
-                        <tr><td>Station IP</td> <td><input name=station type=text value='%s'></td>  </tr>
-                        <tr><td>Station MAC</td><td><input name=mac type=text value='%s'></td>      </tr>
-                        <tr><td>Comment</td>    <td><input name=comment type=text value='%s'></td>   </tr>
-                    </table>
-                    <hr>
-                    <button name=action value='update %s'>Update</button>
-                    <button>Cancel</button>
-                </form>
-                """ % (row+(row[0],))
-            break
-        elif action[0] == 'update':
-            cur.execute('update stations set station=%s, mac=%s, comment=%s where station=%s',
-                (form.getvalue('station'),form.getvalue('mac'),form.getvalue('comment'),action[1]))
-            conn.commit()
+                    """,(row+(row[0],row[0])))
+
+            content += '</table>'
         else:
-            raise Exception('Invalid action = "%s"' % action);
+            content += 'No stations defined'
 
-    cur.execute('select station,mac,comment from stations order by station')
+        content += html("""
+            <hr>
+            <form method=post>
+                <button name=action value=new>New station</button>
+            </form>
+            """,None)
 
-    if cur.rowcount > 0:
-        print """
-            <table border=1>
-            <tr>
-                <th>Station</th>
-                <th>MAC</th>
-                <th>Comment</th>
-                <th>&nbsp;</th>
-            </tr>
-            """
-        for row in cur:
-            print """
-                <tr><td>%s</td>
-                    <td>%s</td>
-                    <td>%s</td>
-                    <td>
-                        <form method=post>
-                            <button name=action value='edit %s'>Edit</button>
-                            <button name=action value='del %s'>Del</button>
-                        </form>
-                    </td>
-                </tr>
-                """ % (row+(row[0],row[0]))
-        print '</table>'
-    else:
-        print 'No stations defined'
+    # print generated content
+    print "Content-type: text/html\n\n"+html("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <title>Station Manager</title>
+    <style>
+        input { font-family:monospace }
+    </style>    
+    </head>
+    <body>
+    <tt>
+    <h2>Station Manager</h2>
+    """,None) + content + "</tt></body></html>"
 
-    print """
-        <hr>
-        <form method=post>
-            <button name=action value=new>New station</button>
-        </form>
-        """
-
-print '</body></html>'
+# all errors come here
+except:
+    print "Content-type: text/html\n\n"+html("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <title>Error</title>
+    </head>
+    <body>
+    <tt>
+    Sorry, an error has occurred:<p><pre>
+    """,None)
+    traceback.print_exc(file=sys.stdout)
+    print("</pre><p>")
+    cgi.print_form(form)
+    print '</body></html>'

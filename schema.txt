@@ -1,0 +1,78 @@
+# Factory database schema
+# Note using postgresql, manual connect: sudo -u postgres psql 
+# In theory, this can be pasted onto its command line
+
+# create the database
+create database factory;
+\c factory;
+
+# create the user
+create user factory;
+
+# generic function to return uct
+create or replace function uct() returns timestamp as $$ select now() at time zone 'uct'; $$ language sql;
+
+# Test station managment, see stations admin CGI
+create table stations (
+    station int unique not null check (station > 0 and station <= 200),
+    mac macaddr unique not null,
+    comment varchar	
+);
+grant select, update, insert, delete, trigger on stations to factory; 
+
+# Info for each supported software build, see builds admin CGI
+# The build ID must be unique across all platforms
+create table builds (
+    buildid varchar unique not null,
+    provision boolean default false,
+    filename varchar not null,
+    phase1 int array,
+    phase2 int array,
+    phase3 int array,
+    phase4 int array,
+    comment varchar		
+);
+grant select, update, insert, delete, trigger on builds to factory; 
+
+# test state, per device, installed by various process CGIs
+create type states as enum('TESTING','FAILED','PASSED','COMPLETE');
+create table devices (
+    deviceid varchar unique primary key,
+    buildid varchar,	
+    boardid varchar,
+    created timestamp not null default uct(),
+    updated timestamp not null default uct(),
+    state states not null default 'TESTING',
+    int phase not NULL default 1
+);
+# always update 'updated' whenever the device status changes
+create or replace function updated() returns trigger as $$ begin new.updated=uct(); return new; end; $$ language plpgsql;
+create trigger updated before update on devices for each row execute procedure updated();
+grant select, update, insert, trigger on devices to factory;
+
+# Provisioned data, per device, create with provision process CGI
+# Columns starting with '_' are magic
+create table provisioned (
+    deviceid varchar unique,
+    backhauled boolean default false,
+    _mac1 macaddr
+);
+grant select, update, insert, trigger on provisions to factory; 
+
+# Test results, per test, per device, maintain be various process CGIs
+create table tests (
+    id serial unique not null,
+    deviceid varchar not null primary key,
+    started timestamp not null default uct(),
+    ended timestamp,
+    station int not null,
+    phase int not null,
+    testname varchar not null,
+    command varchar not null,
+    status int,
+    stdout varchar
+);
+grant select, update, insert, trigger on tests to factory;
+
+# let web server act as factory
+create user 'www-dat' in role factory
