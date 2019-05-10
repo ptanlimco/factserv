@@ -2,7 +2,18 @@
 
 try:
 
-    import traceback, re, cgi, sys, psycopg2
+    import traceback, re, cgi, sys, psycopg2, subprocess
+
+    def dnsmasq():
+        p = subprocess.Popen(["sudo","./conf.dnsmasq"], stderr = subprocess.PIPE);
+        stderr = p.communicate()[1]
+        p.stderr.close()
+        status = p.returncode
+
+        if not stderr:
+            stderr="conf.dnsmasq unknown failure"
+        if status:
+            raise Exception("%s (%d)" % (stderr, status))
 
     # return html string with escaped values inserted, redundant whitespace removed
     def html(string, values):
@@ -36,6 +47,7 @@ try:
                     cur.execute('insert into stations (station,mac,comment) values(%s,%s,%s)', 
                         (form.getvalue('station'),form.getvalue('mac'),form.getvalue('comment')))
                     conn.commit()
+                    dnsmasq()
             elif action[0] == 'del':
                 content += html("""
                     <table>
@@ -57,6 +69,7 @@ try:
             elif action[0] == 'really':
                     cur.execute('delete from stations where station=%s', (action[1],));
                     conn.commit()
+                    dnsmasq()
             elif action[0] == 'edit':
                 cur.execute('select station, mac, comment from stations where station = %s', (action[1],));
                 row = cur.fetchone();
@@ -77,6 +90,7 @@ try:
                 cur.execute('update stations set station=%s, mac=%s, comment=%s where station=%s',
                     (form.getvalue('station'),form.getvalue('mac'),form.getvalue('comment'),action[1]))
                 conn.commit()
+                dnsmasq()
             else:
                 raise Exception('Invalid action = "%s"' % action);
 

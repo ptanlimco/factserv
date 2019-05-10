@@ -1,0 +1,49 @@
+#!/bin/bash -eu
+
+# This script is invoked by the stations CGI to update dnsmasq.conf and restart dnsmasq when changes are made to the stations database.
+#
+# sudoers.cfg must contain the line:
+#
+#   www-dat ALL=(ALL) NOPASSWD: /usr/lib/cgi-bin/conf.dnsmasq
+#
+# (or whatever is the web server's username and cgi-bin directory)
+# 
+# Additionally, root must have select privilege on the stations table.
+#
+# Also the file /etc/factory.cfg must exist
+
+me=${0##*/}
+
+die() { echo $me: $* >&2; exit 1; }
+
+((UID)) && die "must be root"
+
+source /etc/factory.cfg
+
+echo "Configuring $dut_interface with ip $dut_ip..."
+
+# this isn the file we will update
+config=/etc/dnsmasq.conf
+
+net=${dut_ip%.*}
+
+(
+    flock -w5 9 || die "failed to acquire lock"
+    stations=$(psql -d factory -A -t -F" " -c 'select mac,station from stations order by station') || die 'psql failed'
+    md5=$(echo $dut_interface $dut_ip $stations | md5sum | awk '{print $1}') || die 'md5sum failed'
+    if [[ $md5 != $(awk '{print $NF; exit}' $config) ]]; then 
+        {
+            echo "# this file is auto-generated, do not edit ${md5%% *}"
+            echo "interface=$dut_interface"
+            echo "bind-interfaces"
+            echo "local=/localnet/"
+            echo "dhcp-range=$net.0,static"
+            set -- $stations
+            while (($#)); do
+                echo "dhcp-host=$1,ts$2,$net.$2,infinite"
+                shift 2
+            done
+        } >$config || die "failed to update $config"
+        systemctl restart dnsmasq || die "failed to restart dnsmasq"
+    fi    
+) 9>/tmp/$me.lock    
