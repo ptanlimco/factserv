@@ -1,0 +1,36 @@
+#!/bin/bash
+# This script is invoked by the stations CGI to update dnsmasq.conf and restart dnsmasq when changes are made to the stations database.
+#
+# sudoers.cfg must contain the line:
+#
+#   www-dat ALL=(ALL) NOPASSWD: /usr/lib/cgi-bin/conf.dnsmasq
+#
+# (or whatever is the web server's username and cgi-bin directory)
+# 
+# Additionally, root must have select privilege on the stations table.
+
+# These are server-specific
+interface=eno2
+config=/etc/dnsmasq.conf
+
+die() { echo ${0##*/}: $* >&2; exit 1; }
+
+((UID)) && die "must be root"
+
+set -- $(ip --brief addr show dev $interface)
+(($# == 3)) && [[ $1 == $interface ]] || die "can't get info for $interface"
+[[ ${3##*/} == 24 ]] || die "$1 must have /24 netmask"
+
+(
+    flock -w5 9 || die "failed to acquire lock"
+    {
+        echo interface=$1
+        echo bind-interfaces
+        echo local=/localnet/
+        echo dhcp-range=${3%.*}.0,static
+        psql -d factory -A -t -F" " -c 'select mac,station from stations' | while read mac station; do
+            echo dhcp-host=$mac,ts$station,${3%.*}.$station,infinite
+        done || die "failed to read database"
+    } >$config || die "failed to update $config"
+    systemctl restart dnsmasq || die "failed to restart dnsmasq"
+) 9>/tmp/$me.lock    
