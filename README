@@ -1,16 +1,13 @@
-Factory server executable and configuration
+Factory server executable and configuration:
 
     cgi-bin - files that are executable by web server
-
     root - config utilities that go in root directory
-
     etc - config files
 
 Must install:
 
+    postgresql
     apache2
     dnsmasq
     iptables
-    iptables-persistent    
-
-
+    iptables-persistent   
