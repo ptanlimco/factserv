@@ -1,0 +1,42 @@
+#!/usr/bin/python
+
+try:
+
+    import traceback, os, cgi, sys, psycopg2
+        
+    remote = os.environ["REMOTE_ADDR"]
+    if remote == "127.0.0.1":
+        stationID=200
+    else:
+        stationID=remote.split(".")[3]
+
+    form=cgi.FieldStorage()
+       
+    buildID=form.getvalue("buildID");
+    if buildID is None:
+        raise Exception("Must specify buildID")
+
+    conn=psycopg2.connect('dbname=factory')
+    cur=conn.cursor()
+        
+    cur.execute("select filename, %s=any(phase1) or %s=any(phase2) or %s=any(phase3) or %s=any(phase4) as phase4 from builds where buildid = %s",
+        (stationID, stationID, stationID, stationID, buildID))
+
+    if not cur.rowcount:
+        raise Exception("No record for buildID %s" % (buildID,))    
+
+    row =  cur.fetchone();
+
+    if not row[1]:
+        raise Exception("BuildID %s not enabled on test station %s" % (buildID, stationID))
+
+    # This causes apache to return the file directly, rather than a redirect to it
+    print "Location: /files/%s\n" % row[0]
+
+except:
+
+    print """\
+Status: 400 Error
+Content-type: text/plain
+""" 
+traceback.print_exc(file=sys.stdout)
