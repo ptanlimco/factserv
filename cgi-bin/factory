@@ -1,0 +1,198 @@
+#!/usr/bin/python
+#
+# This CGI provides DUT services:
+#
+#    request=download&buildid=X : redirect to the diagnostic tarball associated with
+#    the specified buildid.
+#
+#    request=newdevice&buildid=X[&boardid=X] : if boardid is not specified, just check
+#    if the buildid is allowed to perform phase 1 provisioning on the
+#    requesting test station, return without error if so. Otherwise generate a
+#    new device id, initialize device table, returns the deviceid.
+#
+#    request=startdiag&deviceid=X&buildid=X : initialize the devices table for
+#    specified deviceid for the current test phase
+#
+#    request=starttest&deviceid=X&testid=X&command=X : initialize the tests table for the
+#    specified deviceid, testid, and command string.
+#
+#    request=endtest&deviceid=X&testid=X&status=X (posted with test's stdout) :
+#    complete the entry created by starttest with exit status and stderr/stdout
+#
+#    request=setprovision&?deviceid=X&name=X&value=X - update a column for provisioned data
+#
+#    request=getprovision&deviceid=X&name=X : return the named data from the
+#    provisioned table (it could be ""). 
+#
+#    request=enddiag&deviceid=X - end the current test phase
+
+
+try:
+
+    import traceback, os, cgi, sys, psycopg2
+
+    me=sys.argv[0].split('/')[-1]
+
+    def die(s):
+        raise Exception("%s: %s" % (me,s))    
+    
+    conn=psycopg2.connect('dbname=factory')
+    cur=conn.cursor()
+
+    remote = os.environ["REMOTE_ADDR"]
+    if remote == "127.0.0.1": station=200
+    else:
+        station=remote.split(".")[3] 
+        cur.execute("select 1 from stations where station=%s",station)
+        if (not cur.rowcount):
+            die("Request from %s is not allowed" % (remote,))    
+
+    form=cgi.FieldStorage()
+
+    buildid=form.getvalue("buildid")
+    if buildid:
+        # check that specified buildid is valid on this test station
+        cur.execute("select filename, provision, %s=any(phase1), %s=any(phase2), %s=any(phase3), %s=any(phase4) from builds where buildid = %s", (station, station, station, station, buildid))
+        if not cur.rowcount: die("Unknown buildid '%s'" % (buildid,))    
+        filename, provision, phase1, phase2, phase3, phase4 = cur.fetchone()
+        if not (phase1 or phase2 or phase3 or phase4): die("Buildid %s not enabled on station %s" % (value, station))
+
+    request=form.getvalue("request")
+    if not request: request=me # assume the script name is a symlink
+
+    ok=None
+
+    if request == "download":
+        if not "buildid": die("Requires buildid=")
+        print "Location: /download/%s\n" % (filename,) # Redirect Apache to buildid file
+        quit()
+
+    elif request == "newdevice"
+        if not buildid: die("Requires buildid=")
+        if not provision: die("Provisioning disabled for buildid")
+        if not phase1: die("Phase1 is disallowed for buildid on station %s" % (station,)
+        
+        boardid=form.getvalue("boardid")
+        if boardid:
+            # DUT has scanned a board id, use it as then device id
+            deviceid=boardid
+            cur.execute("delete from devices where deviceid=%s", deviceid) # get rid of any existing state
+            cur.execute("insert into devices (deviceid, boardid, buildid) values (%s, %s, %s)", deviceid, boardid, buildid)
+            conn.commit()
+            ok=deviceid
+        else:
+            # Just allow DUT to scan a board ID
+            ok=""
+
+    elif request == "startdiag":
+        if not buildid: die("Requires buildid=")
+        deviceid=form.getvalue("deviceid")
+        if not deviceid: die("Requires deviceid=")
+
+        cur.execute("select state, phase from devices where deviceid=%s", deviceid)
+        if not cur.rows: 
+            if not phase1: die("Can't perform phase 1 for a new device on station %s" % (station,))
+            cur.execute("insert into devices (state, phase, station, deviceid, buildid) values ('TESTING', 1, %s, %s, %s)"), station, deviceid, boardid)
+            ok = "TESTING 1"
+        else:    
+            state, phase = cur.fetchone()
+            if state == "COMPLETE": phase=4
+            else if state == "PASSED": phase += 1
+            p=phase    
+            # regress phase until we find one that's allowed on this station
+            if phase == 4 and not phase4: phase=3
+            if phase == 3 and not phase3: phase=2
+            if phase == 2 and not phase2: phase=1
+            if phase == 1 and not phase1: die("can't perform phase %s or any predecessor on station %s" % (p, station))
+            state = "TESTING"
+            cur.execute("update devices set (state=%s, phase=%s, station=%s) where deviceid = %s", state, phase, station, deviceid)
+            ok = "%s %s" % (state, phase)
+        conn.commit()
+
+    elif request == "starttest":
+        deviceid=form.getvalue("deviceid")
+        if deviceid is None: die("Must specify deviceid=")
+
+        testname=form.getvalue("testname")
+        if testname is None: die("Must specify testname=")
+
+        command=form.getvalue("command")
+        if command is None: die("Must specify command=")
+
+        cur.execute("select phase from devices where deviceid = %s and state='TESTING' and station = %s", deviceid, station)
+        if not cur.rows: die("Device %s is not being tested on station %s", deviceid, station)
+        phase=cur.fetchone()
+
+        cur.execute("insert into tests (deviceid, station, phase, testname, command) values (%s, %s, %s, %s, %s)", deviceid, station, phase, testname, command)
+        conn.commit()
+
+        ok = ""
+
+    elif request == "endtest":
+        deviceid=form.getvalue("deviceid")
+        if deviceid is None: die("Must specify deviceid=")
+        
+        testname=form.getvalue("testname")
+        if testname is None: die("Must specify testname=")
+
+        stdout=form.getvalue("stdout")
+        if stdout is None: die("Must specify stdout=")
+
+        status=form.getvalue("status")
+        if status is None: die("Must specify status=")
+
+        # get the most recent test record for the device, make sure it's the state we think it should be
+        cur.execute("select id, testname=%s and status=NULL and station=%s from tests where deviceid=%s sort by id desc limit 1")
+        if not cur.rows: die("No test in progress for deviceid %s" % (deviceid,)
+        id, expected = cur.fetchone()
+        if not expected: die("Test id %s for deviceid %s has invalid state", id, device)
+         
+        cur.execute("update tests set (ended=uct(), status=%s, stdout=%s) where id=%s", status, stdout, testid)
+        conn.commit()
+        
+        ok = ""
+
+    elif request = "enddiag":
+        if buildid is None: die("Must specify buildid=")
+        deviceid=form.getvalue("deviceid")
+        if deviceid is None: die("Must specify deviceid=")
+        cur.execute("select state, phase from devices where deviceid=%s", deviceid)
+        if not cur.rows: die("No record for deviceid %s" % deviceid)
+        state, phase = cur.fetchone()
+        if state != "TESTING": die("Expected deviceid %s state TESTING, actual state is %s" % (deviceid, state))
+        if (phase==1 and phase2) or (phase==2 and phase3) or (phase==3 and phase4):
+            state="PASSED" # prepare for next phase
+        else
+            state="COMPLETE" # there is no next phase!
+        cur.execute("update devices set (state=%s) where deviceid=%s", (state, deviceid))
+        conn.commit()
+
+        ok = "%s %s" % (state, phase)
+
+    elif request = "setprovision"
+        deviceid=form.getvalue("deviceid")
+        if deviceid is None: die("Must specify deviceid=")
+        key=form.getvalue("key")
+        if key is None: die("Must specify key=")
+        value=form.getvalue("value")
+        if value is None: die("Must specify value=")
+        cur.execute("insert into provisioned (deviceid, concat('_',%s)) values(%s, %s) on conflict(deviceid) do update set(concat('_',%s)=update provisioned set select true from provisioned where deviceid=%s",deviceid)
+            
+
+
+         
+
+
+        
+
+except:
+    print """
+Status: 400 Error
+Content-type: text/plain
+""" 
+traceback.print_exc(file=sys.stdout)
+print "\n-"
+for k in sorted(os.environ): print k,"=",os.environ[k]
+print "\n-"
+for k in sorted(form.keys()): print k,"=",form.getvalue(k)
+

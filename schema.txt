@@ -35,15 +35,16 @@ create table builds (
 grant select, update, insert, delete, trigger on builds to factory; 
 
 # test state, per device, installed by various process CGIs
-create type states as enum('TESTING','FAILED','PASSED','COMPLETE');
+create type states as enum('UNKNOWN','TESTING','FAILED','PASSED','COMPLETE');
 create table devices (
     deviceid varchar unique primary key,
     buildid varchar,	
     boardid varchar,
     created timestamp not null default uct(),
     updated timestamp not null default uct(),
-    state states not null default 'TESTING',
-    int phase not NULL default 1
+    state states not null default 'UNKNOWN',
+    int phase not NULL default 0,
+    int station not NULL default 0
 );
 # always update 'updated' whenever the device status changes
 create or replace function updated() returns trigger as $$ begin new.updated=uct(); return new; end; $$ language plpgsql;
