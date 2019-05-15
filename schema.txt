@@ -83,3 +83,7 @@ grant usage,select on all sequences in schema public to factory;
 
 -- web server can act as factory
 create user "www-data" in role factory
+
+-- root can select stations
+create user root
+grant select on stations to root

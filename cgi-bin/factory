@@ -11,59 +11,70 @@
 #    generate a new device id, initialize device table, returns the deviceid.
 #
 #    service=startdiag&deviceid=X&buildid=X : initialize the device table for
-#    specified deviceid for the current test phase, returns "state phase".
+#    specified deviceid for the current test phase, returns "state phase". The
+#    DUT uses the phase to determine which of 4 possible testlists will be
+#    used.
 #
-#    service=starttest&deviceid=X&command=X : initialize the tests table for
-#    the specified deviceid and command string, returns a numeric test ID.
+#    service=starttest&deviceid=X&comment=X&command=X : initialize the tests
+#    table for the specified deviceid and command string, returns a numeric
+#    test ID. The comment is an arbitrary string pulled from the test list.
 #
 #    service=endtest&deviceid=X&testid=X&status=X&stdout=X : given test ID
 #    returned by starttest, make the test as complete with given status and
 #    stdout. If status is non-zero, devcice is put into failed state.
 #
-#    service=setprovision&?deviceid=X&column=X&value=X - update named column
-#    with a value
+#    service=setprovision&?deviceid=X&key=X&value=X - update named key with a
+#    value (the columns name is 'p_<key>').
 #
-#    service=getprovision&deviceid=X&column=X : return the value of the named
+#    service=getprovision&deviceid=X&key=X : return the value of the named
 #    column (it could be "")
 #
 #    service=enddiag&deviceid=X - finish current test session, device is moved
 #    to PASSED or COMPLETED state. Returns "state phase".
 
+# Any server error result in a 4XX response which DUT must treat as fatal.  
+
 # prefix of test stations attached to this server, this can change
-prefix="172.16.240."
 
 try:
 
     import traceback, os, cgi, sys, psycopg2
 
-    sys.stderr=sys.stdout
+    sys.stderr = sys.stdout
     # print "Content-type: text/plain\n" # enable for debug only
-
-    me=sys.argv[0].split("/")[-1]
-
-    form=cgi.FieldStorage()
     
-    conn=psycopg2.connect("dbname=factory")
-    cur=conn.cursor()
+    me = sys.argv[0].split("/")[-1]
+    form = cgi.FieldStorage()
 
-    station=None
+    prefix=None
+    for l in open("/etc/factory.cfg"):
+        k=l.split('=',2)
+        if k[0].strip == "dut_ip":
+            prefix=".".join(k[1].split(".")[0:3])+"."
+            break
+    if not prefix: raise Exception("Can't find dut_ip")
+    
+    conn = psycopg2.connect("dbname=factory")
+    cur = conn.cursor()
+
+    station = None
     try: 
-        remote=os.environ["REMOTE_ADDR"]
+        remote = os.environ["REMOTE_ADDR"]
     except:
         remote="127.0.0.1"
-    if remote == "127.0.0.1": station=0
+    if remote == "127.0.0.1": station = 0
     else:
-        if not remote.startswith(prefix): raise Exception("Request from %s is not allowed" % (remote,)) 
-        station=remote.split(".")[3] 
+        if not remote.startswith(prefix): raise Exception("Request from %s is not allowed (expecting prefix %s)" % (remote,prefix)) 
+        station = remote.split(".")[3] 
         cur.execute("select 1 from stations where station=%s", (station,))
         if not cur.rowcount: raise Exception("Request from %s is not allowed" % (remote,))    
 
-    service=form.getvalue("service")
-    if not service: service=me # assume the script name is a symlink
+    service = form.getvalue("service")
+    if not service: service = me # assume the script name is a symlink
 
     # get specified parameter from form or die
     def require(p):
-        v=form.getvalue(p)
+        v = form.getvalue(p)
         if v is None: raise Exception("Requires param '%s'" % p)
         return v
 
@@ -76,37 +87,37 @@ try:
         if not (build["phase1"] or build["phase2"] or build["phase3"] or build["phase4"]): raise Exception("Buildid %s not enabled for station %s" % (value, station))
         return build
 
-    ok=None
+    ok = None
 
     if service == "download":
-        buildid=require("buildid")
-        build=checkbuild(buildid)
+        buildid = require("buildid")
+        build = checkbuild(buildid)
         print "Location: /download/%s\n" % (build["filename"],) # Redirect Apache to buildid file
         quit()
 
     elif service == "newdevice":
-        buildid=require("buildid")
-        build=checkbuild(buildid)
+        buildid = require("buildid")
+        build = checkbuild(buildid)
         if not build["provision"]: raise Exception("Provisioning disabled for buildid %s" % (buildid,))
         if not build["phase1"]: raise Exception("Phase1 is disallowed for buildid %s on station %s" % (buildid,station))
         
-        boardid=form.getvalue("boardid")
+        boardid = form.getvalue("boardid")
         if boardid:
             # for now, use the boardid as the deviceid, create a new record
-            deviceid=boardid
+            deviceid = boardid
             cur.execute("insert into devices (deviceid, boardid, buildid, station) values (%s, %s, %s, %s) on conflict(deviceid) do update set boardid=%s, buildid=%s, station=%s, state='TESTING', phase=1",
                         (deviceid, boardid, buildid, station, boardid, buildid, station));  
             conn.commit()
-            ok=deviceid
+            ok = deviceid
         else:
             # If boardid not specified, DUT is checking if it's allowed to
             # request one, return an empty string as response
             ok=""
 
     elif service == "startdiag":
-        deviceid=require("deviceid")
-        buildid=require("buildid")
-        build=checkbuild(buildid)
+        deviceid = require("deviceid")
+        buildid = require("buildid")
+        build = checkbuild(buildid)
 
         cur.execute("select state, phase from devices where deviceid=%s", (deviceid,))
         if not cur.rowcount: 
@@ -114,14 +125,14 @@ try:
             cur.execute("insert into devices (state, phase, station, buildid, deviceid) values ('TESTING', 1, %s, %s, %s)", (station, buildid, deviceid))
             ok="TESTING 1"
         else:    
-            state, phase=cur.fetchone()
-            if state == "COMPLETE": phase=4
+            state, phase = cur.fetchone()
+            if state == "COMPLETE": phase = 4
             elif state == "PASSED": phase += 1
-            p=phase    
+            p = phase    
             # regress phase until we find one that's allowed on this station
-            if phase == 4 and not build["phase4"]: phase=3
-            if phase == 3 and not build["phase3"]: phase=2
-            if phase == 2 and not build["phase2"]: phase=1
+            if phase == 4 and not build["phase4"]: phase = 3
+            if phase == 3 and not build["phase3"]: phase = 2
+            if phase == 2 and not build["phase2"]: phase = 1
             if phase == 1 and not build["phase1"]: raise Exception("can't perform phase %s or any predecessor for buildid %s on station %s" % (p, buildid, station))
             state="TESTING"
             cur.execute("update devices set state=%s, phase=%s, station=%s, buildid=%s  where deviceid=%s", (state, phase, station, buildid, deviceid))
@@ -129,21 +140,23 @@ try:
         conn.commit()
 
     elif service == "starttest":
-        deviceid=require("deviceid")
-        command=require("command")
+        deviceid = require("deviceid")
+        command = require("command")
+        comment = form.getvalue("comment");
+        if comment is None: comment=""
 
         cur.execute("select phase from devices where deviceid=%s and state='TESTING' and station=%s", (deviceid, station))
         if not cur.rowcount: raise Exception("Test not in progress for device %s on station %s", deviceid, station)
-        phase=cur.fetchone()[0]
-        cur.execute("insert into tests (deviceid, station, phase, command) values (%s, %s, %s, %s, %s) returning id", (deviceid, station, phase, command))
+        phase = cur.fetchone()[0]
+        cur.execute("insert into tests (deviceid, station, phase, command, comment) values (%s, %s, %s, %s, %s) returning id", (deviceid, station, phase, command, comment))
         conn.commit()
-        ok=cur.fetchone()[0]; # returns the test id
+        ok = cur.fetchone()[0]; # returns the test id
 
     elif service == "endtest":
-        testid=require("testid")
-        deviceid=require("deviceid")
-        stdout=require("stdout")
-        status=require("status")
+        testid = require("testid")
+        deviceid = require("deviceid")
+        stdout = require("stdout")
+        status = require("status")
 
         # get the status of specified test record
         cur.execute("select deviceid=%s and status is NULL and station=%s from tests where id=%s", (deviceid, station, testid))
@@ -154,16 +167,16 @@ try:
         ok=""
 
     elif service == "enddiag":
-        deviceid=require("deviceid")
+        deviceid = require("deviceid")
         
         cur.execute("select state, phase, buildid from devices where deviceid=%s", (deviceid,))
         if not cur.rowcount: raise Exception("No record for deviceid %s" % (deviceid,))
-        state, phase, buildid=cur.fetchone()
+        state, phase, buildid = cur.fetchone()
         if state != "TESTING": raise Exception("Expected deviceid %s state TESTING, actual state is %s" % (deviceid, state))
         
-        build=checkbuild(buildid)
+        build = checkbuild(buildid)
         if (phase==1 and build["phase2"]) or (phase==2 and build["phase3"]) or (phase==3 and build["phase4"]):
-            state="PASSED" # prepare for next phase
+            state="PASSED" # prepare for nex phase
         else:
             state="COMPLETE" # there is no next phase!
         cur.execute("update devices set state=%s where deviceid=%s", (state, deviceid))
@@ -171,20 +184,21 @@ try:
         ok="%s %s" % (state, phase)
 
     elif service == "setprovision":
-        boardid=getboardid()
-        deviceid=require("deviceid")
-        key=require("key")
-        value=require("value")
-        key=ext.quote_ident(join("p_",key))
-        cur.execute("insert into provisioned (deviceid, %s) values (%%s, %%s) on conflict(deviceid) do update set %s=%%s"%(key,key),(deviceid,value,value))
+        deviceid = require("deviceid")
+        key = require("key")
+        if not key.isalnum(): raise Exception("Invalid key '%s'" % (key,))
+        key="p_"+key
+        value = require("value")
+        cur.execute("insert into provisioned (deviceid, %s) values (%%s, %%s) on conflict(deviceid) do update set %s=%%s" % (key,key), (deviceid,value,value))
         ok=""
 
     elif service == "getprovision":
-        deviceid=require("deviceid")
-        key=require("key")
-        key=ext.quote_ident(join("p_",key))
+        deviceid = require("deviceid")
+        key = require("key")
+        if not key.isalnum(): raise Exception("Invalid key '%s'" % (key,))
+        key="p_"+key
         cur.execute("select %s from provisioned where deviceid = %%s" % (key,),(deviceid,))
-        ok=cur.fetchone()[0]
+        ok = cur.fetchone()[0]
     
     else:
         raise Exception("Invalid service '%s'" % (service,))
@@ -194,7 +208,7 @@ try:
 
 except Exception as e:
     print "Status: 400 %s\nContent-type: text/plain\n" % str(e)
-    traceback.print_exc(file=sys.stdout)
+    traceback.print_exc(file = sys.stdout)
     if station is not None: print "Station ID:",station
     for k in sorted(os.environ): print k,"=",os.environ[k]
     for k in sorted(form.keys()): print k,"=",form.getvalue(k)

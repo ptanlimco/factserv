@@ -1,0 +1,13 @@
+CGIs in this directory:
+
+    stations - manage the table of test station mac addresses and station
+    numbers. 
+
+    builds - manage the table of build IDs, and which file is delivered for
+    which build.
+
+    factory - for use by DUT, provides various test process services, all
+    output in text/plain
+
+    conf.dnsmasq - invoked by stations CGI as 'sudo conf.dnsmasq', updates
+    dnsmasq configuration if needed and restarts the server

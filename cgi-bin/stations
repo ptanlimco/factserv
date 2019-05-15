@@ -1,19 +1,18 @@
 #!/usr/bin/python
 
 try:
-
     import traceback, re, cgi, sys, psycopg2, subprocess
 
     def dnsmasq():
-        p = subprocess.Popen(["sudo","./conf.dnsmasq"], stderr = subprocess.PIPE);
-        stderr = p.communicate()[1]
-        p.stderr.close()
+        p = subprocess.Popen(["sudo","./conf.dnsmasq"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT);
+        stdout = p.communicate()[0]
+        p.stdout.close()
         status = p.returncode
 
-        if not stderr:
-            stderr="conf.dnsmasq unknown failure"
+        if not stdout:
+            stdout="conf.dnsmasq unknown failure"
         if status:
-            raise Exception("%s (%d)" % (stderr, status))
+            raise Exception("%s (%d)" % (stdout.split("\n")[0], status))
 
     # return html string with escaped values inserted, redundant whitespace removed
     def html(string, values):
@@ -146,19 +145,9 @@ try:
     <h2>Station Manager</h2>
     """,None) + content + "</tt></body></html>"
 
-# all errors come here
-except:
-    print "Content-type: text/html\n\n"+html("""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <title>Error</title>
-    </head>
-    <body>
-    <tt>
-    Sorry, an error has occurred:<p><pre>
-    """,None)
-    traceback.print_exc(file=sys.stdout)
-    print("</pre><p>")
-    cgi.print_form(form)
-    print '</body></html>'
+except Exception as e:
+    print "Content-type: text/plain\n\nAn error has occurred"
+    print
+    traceback.print_exc(file = sys.stdout)
+    print
+    for k in sorted(form.keys()): print k,"=",form.getvalue(k)
