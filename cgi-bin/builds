@@ -96,7 +96,7 @@ try:
 
         for n in tuple(p1+p2+p3+p4):
             if n < 0 or n > 200:
-                raise Exception("Test station must be 1 to 200")
+                raise Exception("Test station must be 0 to 200")
 
     conn=psycopg2.connect('dbname=factory')
     cur=conn.cursor()

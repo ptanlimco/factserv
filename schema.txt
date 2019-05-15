@@ -1,18 +1,20 @@
-# Factory database schema
-# Note using postgresql, manual connect: sudo -u postgres psql 
-# In theory, this can be pasted onto its command line
+-- Factory database schema
+-- To connect to postgresql: sudo -u postgres psql 
+-- Assumes database in a default state: 'drop database factory; drop user factory; drop user "www-data";'
+-- Note hyphenation must be quoted.
+-- This file can be loaded from psql command line with '\i path/to/this/file'
 
-# create the database
+-- create the database
 create database factory;
 \c factory;
 
-# create the user
+-- create the user
 create user factory;
 
-# generic function to return uct
+-- generic function to return uct
 create or replace function uct() returns timestamp as $$ select now() at time zone 'uct'; $$ language sql;
 
-# Test station managment, see stations admin CGI
+-- Test station managment, see stations admin CGI
 create table stations (
     station int unique not null check (station > 0 and station <= 200),
     mac macaddr unique not null,
@@ -20,8 +22,8 @@ create table stations (
 );
 grant select, update, insert, delete, trigger on stations to factory; 
 
-# Info for each supported software build, see builds admin CGI
-# The build ID must be unique across all platforms
+-- Info for each supported software build, see builds admin CGI
+-- The build ID must be unique across all platforms
 create table builds (
     buildid varchar unique not null,
     provision boolean default false,
@@ -34,36 +36,37 @@ create table builds (
 );
 grant select, update, insert, delete, trigger on builds to factory; 
 
-# test state, per device, installed by various process CGIs
-create type states as enum('UNKNOWN','TESTING','FAILED','PASSED','COMPLETE');
+-- test state, per device, installed by various process CGIs
+create type states as enum('TESTING','FAILED','PASSED','COMPLETE');
 create table devices (
-    deviceid varchar unique primary key,
+    deviceid varchar primary key,
     buildid varchar,	
     boardid varchar,
     created timestamp not null default uct(),
     updated timestamp not null default uct(),
-    state states not null default 'UNKNOWN',
-    int phase not NULL default 0,
-    int station not NULL default 0
+    state states not null default 'TESTING',
+    phase int not NULL default 1,
+    station int not NULL default 0
 );
-# always update 'updated' whenever the device status changes
+
+-- always update 'updated' whenever the device status changes
 create or replace function updated() returns trigger as $$ begin new.updated=uct(); return new; end; $$ language plpgsql;
 create trigger updated before update on devices for each row execute procedure updated();
 grant select, update, insert, trigger on devices to factory;
 
-# Provisioned data, per device, create with provision process CGI
-# Columns starting with '_' are magic
+-- Provisioned data, per device, create with provision process CGI
+-- Columns starting with 'p_' are magic
 create table provisioned (
     deviceid varchar unique,
     backhauled boolean default false,
-    _mac1 macaddr
+    p_mac1 macaddr
 );
-grant select, update, insert, trigger on provisions to factory; 
+grant select, update, insert, trigger on provisioned to factory; 
 
-# Test results, per test, per device, maintain be various process CGIs
+-- Test results, per test, per device, maintain be various process CGIs
 create table tests (
-    id serial unique not null,
-    deviceid varchar not null primary key,
+    id serial unique primary key,
+    deviceid varchar not null,
     started timestamp not null default uct(),
     ended timestamp,
     station int not null,
@@ -75,5 +78,8 @@ create table tests (
 );
 grant select, update, insert, trigger on tests to factory;
 
-# let web server act as factory
-create user 'www-dat' in role factory
+-- also let factory increment serial counters
+grant usage,select on all sequences in schema public to factory;
+
+-- web server can act as factory
+create user "www-data" in role factory
