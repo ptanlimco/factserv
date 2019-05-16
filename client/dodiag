@@ -1,0 +1,26 @@
+#/usr/bin/python
+
+# This is the test client
+
+import os, sys, httplib
+
+# Return current clientID, or None
+# This must be ported to your board
+def clientid():
+    return None
+
+# Send a request to the pionic controller, return response 
+# The IP of the pionic controller is hard coded
+# If data is provided, it is will sent as raw POST content with "Content-Type: application/x-www-form-urlencoded"
+pionicip="192.168.111.1"
+def pionic(request, data=None):
+    c=httplib.HTTPConnection(pionicip)
+    if data is None:
+        c.request=("GET",request)
+    else
+        c.request=("POST",request,data,{"Content-Type","application/x-www-form-urlencoded"})
+    r=c.getresponse()
+    if r.status != 200:
+        raise Exception("Pionic request failed: %s" % (r.reason,))
+    return r.read()    
+

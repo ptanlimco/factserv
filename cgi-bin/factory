@@ -46,14 +46,6 @@ try:
     me = sys.argv[0].split("/")[-1]
     form = cgi.FieldStorage()
 
-    prefix=None
-    for l in open("/etc/factory.cfg"):
-        k=l.split('=',2)
-        if k[0].strip == "dut_ip":
-            prefix=".".join(k[1].split(".")[0:3])+"."
-            break
-    if not prefix: raise Exception("Can't find dut_ip")
-    
     conn = psycopg2.connect("dbname=factory")
     cur = conn.cursor()
 
@@ -64,13 +56,20 @@ try:
         remote="127.0.0.1"
     if remote == "127.0.0.1": station = 0
     else:
-        if not remote.startswith(prefix): raise Exception("Request from %s is not allowed (expecting prefix %s)" % (remote,prefix)) 
+        prefix=None
+        for l in open("/etc/factory.cfg"):
+            k=l.split('=',2)
+            if k[0] == "dut_ip":
+                prefix=".".join(k[1].split(".")[0:3])+"."
+                break
+        if not prefix: raise Exception("Can't find 'dut_ip' in /etc/factory.cfg")
+        if not remote.startswith(prefix): raise Exception("Request from IP %s is not allowed (expecting prefix %s)" % (remote,prefix)) 
         station = remote.split(".")[3] 
         cur.execute("select 1 from stations where station=%s", (station,))
-        if not cur.rowcount: raise Exception("Request from %s is not allowed" % (remote,))    
+        if not cur.rowcount: raise Exception("Request from IP %s is not allowed (unknown test station)" % (remote,))    
 
     service = form.getvalue("service")
-    if not service: service = me # assume the script name is a symlink
+    if not service: service = me # maybe the script name is a symlink
 
     # get specified parameter from form or die
     def require(p):
@@ -92,7 +91,7 @@ try:
     if service == "download":
         buildid = require("buildid")
         build = checkbuild(buildid)
-        print "Location: /download/%s\n" % (build["filename"],) # Redirect Apache to buildid file
+        print "Location: /download/%s\n" % (build["filename"],) # This actually redirects Apache, the client won't see it
         quit()
 
     elif service == "newdevice":
