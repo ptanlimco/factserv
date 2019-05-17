@@ -11,7 +11,7 @@
 #    generate a new device id, initialize device table, returns the deviceid.
 #
 #    service=startdiag&deviceid=X&buildid=X : initialize the device table for
-#    specified deviceid for the current test phase, returns "state phase". The
+#    specified deviceid for the current test phase, returns "phase". The
 #    DUT uses the phase to determine which of 4 possible testlists will be
 #    used.
 #
@@ -49,20 +49,23 @@ try:
     conn = psycopg2.connect("dbname=factory")
     cur = conn.cursor()
 
+    for l in open("/etc/factory.cfg"):
+        k=l.split('=',2)
+        if k[0] == "dut_ip":
+            dut_ip=k[1].strip()
+            break
+    if not dut_ip: raise Exception("Can't find 'dut_ip' in /etc/factory.cfg")
+
     station = None
     try: 
         remote = os.environ["REMOTE_ADDR"]
     except:
         remote="127.0.0.1"
-    if remote == "127.0.0.1": station = 0
+
+    if remote == "127.0.0.1" or remote == dut_ip: 
+        station = 0
     else:
-        prefix=None
-        for l in open("/etc/factory.cfg"):
-            k=l.split('=',2)
-            if k[0] == "dut_ip":
-                prefix=".".join(k[1].split(".")[0:3])+"."
-                break
-        if not prefix: raise Exception("Can't find 'dut_ip' in /etc/factory.cfg")
+        prefix=".".join(k[1].split(".")[0:3])+"."
         if not remote.startswith(prefix): raise Exception("Request from IP %s is not allowed (expecting prefix %s)" % (remote,prefix)) 
         station = remote.split(".")[3] 
         cur.execute("select 1 from stations where station=%s", (station,))
@@ -135,7 +138,7 @@ try:
             if phase == 1 and not build["phase1"]: raise Exception("can't perform phase %s or any predecessor for buildid %s on station %s" % (p, buildid, station))
             state="TESTING"
             cur.execute("update devices set state=%s, phase=%s, station=%s, buildid=%s  where deviceid=%s", (state, phase, station, buildid, deviceid))
-            ok="%s %d" % (state, phase)
+            ok="%d" % (phase,)
         conn.commit()
 
     elif service == "starttest":

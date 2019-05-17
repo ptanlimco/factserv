@@ -1,0 +1,9 @@
+# phase2 test list for SIC
+# comments and whitespace are ignored
+# lines are in format:
+#  name : timeout : command
+# Where 'name' is any arbitrary string, may not contan a : or #, this appears in the web status page
+#       'seconds' is command timeout, if blank the default is 60 seconds
+#       'command' is the executable command and its arguments
+
+Final test      :: ls -al
