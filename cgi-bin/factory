@@ -5,19 +5,19 @@
 #    service=download&buildid=X : redirect to the diagnostic tarball associated
 #    with the specified buildid.
 #
-#    service=newdevice&buildid=X[&boardid=X] : if boardid is not specified,
+#    service=newdevice&buildid=X[&deviceid=X] : if deviceid is not specified,
 #    just check if the buildid is allowed to perform phase 1 provisioning on
 #    the requesting test station, return without error if so. Otherwise
-#    generate a new device id, initialize device table, returns the deviceid.
+#    configure the device table for phase 1 testing.
 #
 #    service=startdiag&deviceid=X&buildid=X : initialize the device table for
 #    specified deviceid for the current test phase, returns "phase". The
 #    DUT uses the phase to determine which of 4 possible testlists will be
 #    used.
 #
-#    service=starttest&deviceid=X&comment=X&command=X : initialize the tests
+#    service=starttest&deviceid=X&testname=X&command=X : initialize the tests
 #    table for the specified deviceid and command string, returns a numeric
-#    test ID. The comment is an arbitrary string pulled from the test list.
+#    test ID. The testname is an arbitrary string pulled from the test list.
 #
 #    service=endtest&deviceid=X&testid=X&status=X&stdout=X : given test ID
 #    returned by starttest, make the test as complete with given status and
@@ -103,16 +103,14 @@ try:
         if not build["provision"]: raise Exception("Provisioning disabled for buildid %s" % (buildid,))
         if not build["phase1"]: raise Exception("Phase1 is disallowed for buildid %s on station %s" % (buildid,station))
         
-        boardid = form.getvalue("boardid")
-        if boardid:
-            # for now, use the boardid as the deviceid, create a new record
-            deviceid = boardid
-            cur.execute("insert into devices (deviceid, boardid, buildid, station) values (%s, %s, %s, %s) on conflict(deviceid) do update set boardid=%s, buildid=%s, station=%s, state='TESTING', phase=1",
-                        (deviceid, boardid, buildid, station, boardid, buildid, station));  
+        deviceid = form.getvalue("deviceid")
+        if deviceid:
+            cur.execute("insert into devices (deviceid, buildid, station) values (%s, %s, %s) on conflict(deviceid) do update set buildid=%s, station=%s, state='TESTING', phase=1",
+                        (deviceid, buildid, station, buildid, station));  
             conn.commit()
             ok = deviceid
         else:
-            # If boardid not specified, DUT is checking if it's allowed to
+            # If deviceid not specified, DUT is checking if it's allowed to
             # request one, return an empty string as response
             ok=""
 
@@ -144,13 +142,13 @@ try:
     elif service == "starttest":
         deviceid = require("deviceid")
         command = require("command")
-        comment = form.getvalue("comment");
-        if comment is None: comment=""
+        testname = form.getvalue("testname");
+        if testname is None: testname=""
 
         cur.execute("select phase from devices where deviceid=%s and state='TESTING' and station=%s", (deviceid, station))
         if not cur.rowcount: raise Exception("Test not in progress for device %s on station %s", deviceid, station)
         phase = cur.fetchone()[0]
-        cur.execute("insert into tests (deviceid, station, phase, command, comment) values (%s, %s, %s, %s, %s) returning id", (deviceid, station, phase, command, comment))
+        cur.execute("insert into tests (deviceid, station, phase, command, testname) values (%s, %s, %s, %s, %s) returning id", (deviceid, station, phase, command, testname))
         conn.commit()
         ok = cur.fetchone()[0]; # returns the test id
 
@@ -178,7 +176,7 @@ try:
         
         build = checkbuild(buildid)
         if (phase==1 and build["phase2"]) or (phase==2 and build["phase3"]) or (phase==3 and build["phase4"]):
-            state="PASSED" # prepare for nex phase
+            state="PASSED" # prepare for next phase
         else:
             state="COMPLETE" # there is no next phase!
         cur.execute("update devices set state=%s where deviceid=%s", (state, deviceid))

@@ -3,96 +3,145 @@
 
 # This is the test client
 
-import traceback, os, sys, httplib, time
+import traceback, os, sys, httplib, time, urllib, getopt
 
-buildid="test"
+buildID=None
+deviceID=None
+pionicIP="192.168.111.1"
+factoryIP=None
+
+# parse options
+try:
+    opts, args = getopt.getopt(sys.argv[1:],'d:p:b:l')
+except:
+    die("""Usage:
+
+    dodiags [options] buildID [deviceID]
+
+Perform diagnostics. The buildID is manmdatory, the deviceID is given only if
+already proivisioned. If deviceID is unknown dodiags will attempt to scan it and
+perform phase 1 diagnostics, which presumably includes programming the deviceID
+into flash.
+
+    -p ip.ad.re.ss  - specify pionic IP address, default is 192.168.111.1
+    -f ip.ad.re.ss  - specify factory server IP address, default is to obtain from pionic
+""")
+
+assert len(args)and len(args) <= 2
+
+buildID=args[0]
+if len(args) > 1: deviceID=args[1]
+
+for opt, arg in opts:
+    if opt == '-p': pionicIP=arg
+    if opt == '-f': factoryIP=arg
 
 # Send a request to the pionic controller, return response 
 # The IP of the pionic controller is hard coded
-# If data is provided, it is will sent as raw POST content with "Content-Type: application/x-www-form-urlencoded"
-#pionicip="192.168.111.1"
-pionicip="172.16.240.111"
-
-def pionic(service, headers={}, data=None, debug=0):
-    c=httplib.HTTPConnection(pionicip);
+# If data is provided, it is will sent as raw POST content
+def pionic(request, data=None, debug=0):
+    c=httplib.HTTPConnection(pionicIP);
     c.set_debuglevel(debug)
     if data is None:
-        c.request("GET","/"+request,None,headers)
+        c.request("GET","/"+request)
     else:
-        c.request("POST","/"+request,data,headers)
+        c.request("POST","/"+request,data)
     r=c.getresponse()
     if r.status != 200:
         raise Exception("Pionic request failed: %s" % (r.reason,))
     return r.read().strip()    
 
-# request factory service from factoryip
-factoryip=None
-def factory(service, headers={}, data=None, debug=0):
-    headers["service"]=service;
-    c=httplib.HTTPConnection(factoryip);
+# display a message in center of screen, optionally with status output near the bottom
+def show(text, fg="white", bg="blue", status=None):
+    if deviceid is not None: text=deviceid+"\n"+text
+    pionic("display?text&badge&fg=%s&bg=%s"%(fg,bg), text)
+    if status is not None:
+        pionic("display?text&status&fg=%s"%(fg,), status)
+
+# request factory service from factoryIP
+def factory(service, options={}, stdout=None, debug=0):
+    options["service"]=service;
+    c=httplib.HTTPConnection(factoryIP);
     c.set_debuglevel(debug)
-    if data is None:
-        c.request("GET","/cgi-bin/factory", None, headers)
+    options=urllib.urlencode(options)
+    if len(options)>80:
+        # use post if url is too long
+        c.request("POST","/cgi-bin/factory", options, {"Content-Type":"application/x-www-form-urlencoded"})
     else:
-        headers["Content-Type"]="application/x-www-form-urlencoded"
-        c.request("POST","/cgi-bin/factory",data,headers)
+        c.request("GET","/cgi-bin/factory?%s"%options)
     r=c.getresponse()
     if r.status != 200:
-        raise Exception("Server request failed: %s" % (r.reason,))
+        raise Exception("Factory service %s failed: %s" % (service, r.reason))
     return r.read().strip()    
+
+def save_deviceID(deviceID):
+    try:
+        with open("/tmp/dodiag.deviceID.txt") as f: f.write(deviceID)
+    except:
+	None
+
+def load_deviceID():
+    deviceID=None	
+    try:
+	with open("/tmp/dodiag.deviceID.txt") as f: deviceID=f.readline().strip()
+	if deviceID == "": deviceID = None
+    except:
+	None
+    return deviceID
 
 deviceid=None
 
-def badge(text, chinese=None, fg="white", bg="blue", status=None):
-    if deviceid is not None: text=deviceid+"\n"+text
-    if chinese is not None: text=text+"\n"+chinese
-    pionic("display",{"text":"y", "badge":"y", "fg":fg, "bg":bg}, text)
-    if status is not None:
-        pionic("display",{"text":"y", "status":"y", "fg":fg}, status)
-
-def testing(status=None):
-    badge("Test in progress", chinese="正在测试中", status=status)
-
 try:
-    testing(status="Woot")
+    show("Test in progress\n正在测试中")
 
-    if factoryip is None:
+    print "Build ID is", buildID
+
+    print "Pionic IP is", pionicIP 
+
+    if factoryIP is None:
         print "Factory IP unknown, requesting from pionic"
-        factoryip=pionic("factory")
-        print "Factory IP is",factoryip
+        factoryIP=pionic("factory")
+    print "Factory IP is",factoryIP
 
-    if deviceid is None:
-        print "Device ID is unknown, allowed to get board ID?"
-        factory("newdevice",{"buildid": buildid})
-        badge("Scan barcode", chinese="扫描条形码", fg="black", bg="yellow")
-        boardid=pionic("getbar")
-        testing()
-        print "Requesting device ID for board ID",boardid
-        deviceid=factory("newdevice",{"buildid":buildid, "boardid":boardid})
-        print "Using device ID",deviceid
-        testing()
+    if deviceID is None: deviceID = load_deviceID()
+    if deviceID is None:
+        print "Provisioning deviceID"
+        factory("newdevice",{"buildid": buildID})
+        show("Scan barcode\n扫描条形码", fg="black", bg="yellow")
+        deviceID=pionic("getbar")
+        show("Test in progress\n正在测试中")
+	print "Got device ID, updating server",deviceID
+        factory("newdevice",{"deviceid":deviceID, "buildid": buildID},debug=1)
+        print "Saving to file" 
+        with open("/tmp/dodiag.deviceID.txt","w") as f: f.write(deviceID)
+    print "Device ID is", deviceID    
 
-    phase=factory("startdiag",{"deviceid":deviceid, "buildid":buildid})
+    phase=factory("startdiag",{"deviceid":deviceID, "buildid":buildID})
 
     print "Performing phase %s tests"%phase
     for l in open("phase%s" % phase):
         l=l.split('#',2)[0].strip()
         if l == "": continue
+        print "Found '%s'" % (l,) 
         t=l.split(':',3)
         if len(t) != 3: raise Exception("Bad line in phase%d: '%s'"%(phase,l))
-        name=" ".join(t[0].split())
+        testname=" ".join(t[0].split())
         timeout=int(t[1] if t[1] else "0")
         if not timeout: timeout=60
         command=" ".join(t[2].split())
-        badge(name[:18])
-        testid=factory("starttest&deviceid=%s&comment=%s&command=%s" % (deviceid, name, command), debug=1)
-        factory("endtest&deviceid=%s&testid=%s&status=%s" % (deviceid, testid, 0), "Nothing actually happened!")
+        show("PHASE %s\n%s" % (phase, testname[:22]))
+        testid=factory("starttest", {"deviceid":deviceID, "testname":testname, "command":command})
+        print "Running '%s' for max %d seconds..." % (command, timeout)
+        # XXX run command here
+        time.sleep(2)
+        status=0
+        factory("endtest", {"deviceid":deviceID, "testid":testid, "status":status, "stdout":"Nothing actually happened!"})
 
-    factory("enddiag&deviceid=%s",(deviceid,))
+    factory("enddiag", {"deviceid":deviceID})
 
-    badge("TEST PASSED", chinese="通过测试", bg="green");
+    show("TEST PASSED\n通过测试", bg="green");
 
 except Exception as e:
-    badge("TEST FAILED", chinese="测试失败", bg="red", status=str(e))
+    show("TEST FAILED\n测试失败", bg="red", status=str(e))
     traceback.print_exc(file = sys.stdout)
 

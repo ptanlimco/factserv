@@ -6,8 +6,8 @@
 #       'seconds' is command timeout, if blank the default is 60 seconds
 #       'command' is the exsecutable command and any arguments
 
-First test      :: ls -al
+     This    is      the     1st     test         :: ls -al
 
-Second test     :: sleep 50
+Testing the tester              :: sleep 50
 
-Third test      :: ls -al
+Yet another test testing test   :: ls -al
