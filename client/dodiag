@@ -3,31 +3,48 @@
 
 # This is the test client
 
-import traceback, os, sys, httplib, time, urllib, getopt
+import traceback, os, sys, httplib, time, urllib, getopt, subprocess, threading, shlex
+
+def die(msg):
+    print msg
+    sys.exit(1)
 
 buildID=None
 deviceID=None
 pionicIP="192.168.111.1"
 factoryIP=None
+id_file="/tmp/deviceid.txt"
 
 # parse options
 try:
-    opts, args = getopt.getopt(sys.argv[1:],'d:p:b:l')
+    opts, args = getopt.getopt(sys.argv[1:],'p:f:')
 except:
-    die("""Usage:
+    die("""\
+Usage:
 
     dodiags [options] buildID [deviceID]
 
-Perform diagnostics. The buildID is manmdatory, the deviceID is given only if
-already proivisioned. If deviceID is unknown dodiags will attempt to scan it and
-perform phase 1 diagnostics, which presumably includes programming the deviceID
-into flash.
+Interact with factory server and perform diagnostics. Options are:
 
-    -p ip.ad.re.ss  - specify pionic IP address, default is 192.168.111.1
-    -f ip.ad.re.ss  - specify factory server IP address, default is to obtain from pionic
+    -p ip.ad.re.ss    - specify pionic IP address, default is '192.168.111.1'
+    -f ip.ad.re.ss    - specify factory server IP address, default is to request it from pionic
+    -d /path/to/file  - specify file containing the device ID string, default '/tmp/deviceid.txt'
+
+The build ID must always be provided. 
+
+If device ID is not provided dodiag will attempt to read it from the nominal
+device ID file. If that fails it will proceed to scan the PCB barcode to use
+that as the device ID, incidentally also updating the file.
+
+In theory one of the phase 1 diagnostics installs the device ID into permanent
+storage as required.
+
+dodiags expects to find text files named "phase1", "phase2" in the current directory. 
+
+
 """)
 
-assert len(args)and len(args) <= 2
+if len(args) < 1 or len(args) > 2: die("Must specify build ID")
 
 buildID=args[0]
 if len(args) > 1: deviceID=args[1]
@@ -51,12 +68,12 @@ def pionic(request, data=None, debug=0):
         raise Exception("Pionic request failed: %s" % (r.reason,))
     return r.read().strip()    
 
-# display a message in center of screen, optionally with status output near the bottom
-def show(text, fg="white", bg="blue", status=None):
-    if deviceid is not None: text=deviceid+"\n"+text
-    pionic("display?text&badge&fg=%s&bg=%s"%(fg,bg), text)
-    if status is not None:
-        pionic("display?text&status&fg=%s"%(fg,), status)
+# display message in center or top-left of screen
+def badge(text, fg="white", bg="blue", size=90):
+    pionic("display?text&badge&size=%s&fg=%s&bg=%s"%(size,fg,bg), text)
+
+def report(text, fg="white", bg="blue", size=30):
+    pionic("display?text&size=%d&fg=%s&bg=%s"%(size,fg,bg),text);
 
 # request factory service from factoryIP
 def factory(service, options={}, stdout=None, debug=0):
@@ -76,23 +93,33 @@ def factory(service, options={}, stdout=None, debug=0):
 
 def save_deviceID(deviceID):
     try:
-        with open("/tmp/dodiag.deviceID.txt") as f: f.write(deviceID)
+        with open(id_file) as f: f.write(deviceID)
     except:
-	None
+	pass
 
 def load_deviceID():
     deviceID=None	
     try:
-	with open("/tmp/dodiag.deviceID.txt") as f: deviceID=f.readline().strip()
+	with open(id_file) as f: deviceID=f.readline().strip()
 	if deviceID == "": deviceID = None
     except:
-	None
+	pass
     return deviceID
 
-deviceid=None
+def perform(command, timeout):
+    p = subprocess.Popen(command,shell=True,stdout=PIPE,stderr=subprocess.STDOUT)
+    t = threading.timer(timeout, p.kill)
+    try:
+        t.start()
+        stdout = p.communicate()[0]
+    finally:
+        t.cancel()
+    p.stdout.close()
+    status=p.returncode
+    return (status, stdout)
 
 try:
-    show("Test in progress\n正在测试中")
+    badge("Test in progress\n正在测试中")
 
     print "Build ID is", buildID
 
@@ -107,12 +134,12 @@ try:
     if deviceID is None:
         print "Provisioning deviceID"
         factory("newdevice",{"buildid": buildID})
-        show("Scan barcode\n扫描条形码", fg="black", bg="yellow")
+        badge("Scan barcode\n扫描条形码", fg="black", bg="yellow")
         deviceID=pionic("getbar")
-        show("Test in progress\n正在测试中")
+        badge("Test in progress\n正在测试中")
 	print "Got device ID, updating server",deviceID
-        factory("newdevice",{"deviceid":deviceID, "buildid": buildID},debug=1)
-        print "Saving to file" 
+        factory("newdevice",{"deviceid":deviceID, "buildid": buildID})
+        print "Updating device ID file" 
         with open("/tmp/dodiag.deviceID.txt","w") as f: f.write(deviceID)
     print "Device ID is", deviceID    
 
@@ -124,24 +151,27 @@ try:
         if l == "": continue
         print "Found '%s'" % (l,) 
         t=l.split(':',3)
-        if len(t) != 3: raise Exception("Bad line in phase%d: '%s'"%(phase,l))
+        if len(t) != 3: raise Exception("Invalid line in phase%d: '%s'"%(phase,l))
         testname=" ".join(t[0].split())
         timeout=int(t[1] if t[1] else "0")
         if not timeout: timeout=60
         command=" ".join(t[2].split())
-        show("PHASE %s\n%s" % (phase, testname[:22]))
+        report(("Test in progress - 正在测试中\n"+
+                "Device ID : %s\n"+
+                "Build ID  : %s\n"+
+                "Phase     : %s\n"+
+                "Test      : %s\n"+
+                "Timeout   : %s\n"+
+                "Command   : %s\n") % (deviceID, buildID, phase, testname, timeout, command))
         testid=factory("starttest", {"deviceid":deviceID, "testname":testname, "command":command})
         print "Running '%s' for max %d seconds..." % (command, timeout)
-        # XXX run command here
-        time.sleep(2)
         status=0
         factory("endtest", {"deviceid":deviceID, "testid":testid, "status":status, "stdout":"Nothing actually happened!"})
 
     factory("enddiag", {"deviceid":deviceID})
 
-    show("TEST PASSED\n通过测试", bg="green");
+    badge(deviceID+"\nTEST PASSED\n通过测试", bg="green");
 
 except Exception as e:
-    show("TEST FAILED\n测试失败", bg="red", status=str(e))
-    traceback.print_exc(file = sys.stdout)
+    report("TEST FAILED - 测试失败\n\n"+traceback.format_exc(), bg="red", fg="white")
 

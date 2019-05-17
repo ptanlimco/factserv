@@ -16,7 +16,7 @@ create or replace function uct() returns timestamp as $$ select now() at time zo
 
 -- Test station managment, see stations admin CGI
 create table stations (
-    station int unique not null check (station > 0 and station <= 200),
+    station int primary key check (station > 0 and station <= 200),
     mac macaddr unique not null,
     comment varchar	
 );
@@ -25,7 +25,7 @@ grant select, update, insert, delete, trigger on stations to factory;
 -- Info for each supported software build, see builds admin CGI
 -- The build ID must be unique across all platforms
 create table builds (
-    buildid varchar unique not null,
+    buildid varchar primary key,
     provision boolean default false,
     filename varchar not null,
     phase1 int array,
@@ -41,7 +41,6 @@ create type states as enum('TESTING','FAILED','PASSED','COMPLETE');
 create table devices (
     deviceid varchar primary key,
     buildid varchar,	
-    boardid varchar,
     created timestamp not null default uct(),
     updated timestamp not null default uct(),
     state states not null default 'TESTING',
@@ -57,7 +56,7 @@ grant select, update, insert, trigger on devices to factory;
 -- Provisioned data, per device, create with provision process CGI
 -- Columns starting with 'p_' are magic
 create table provisioned (
-    deviceid varchar unique,
+    deviceid varchar primary key,
     backhauled boolean default false,
     p_mac1 macaddr
 );
@@ -65,7 +64,7 @@ grant select, update, insert, trigger on provisioned to factory;
 
 -- Test results, per test, per device, maintain be various process CGIs
 create table tests (
-    id serial unique primary key,
+    id serial primary key,
     deviceid varchar not null,
     started timestamp not null default uct(),
     ended timestamp,

@@ -105,14 +105,11 @@ try:
         
         deviceid = form.getvalue("deviceid")
         if deviceid:
+            # if deviceid is given, (re)init the device table for phase1
             cur.execute("insert into devices (deviceid, buildid, station) values (%s, %s, %s) on conflict(deviceid) do update set buildid=%s, station=%s, state='TESTING', phase=1",
                         (deviceid, buildid, station, buildid, station));  
             conn.commit()
-            ok = deviceid
-        else:
-            # If deviceid not specified, DUT is checking if it's allowed to
-            # request one, return an empty string as response
-            ok=""
+        ok=""
 
     elif service == "startdiag":
         deviceid = require("deviceid")
