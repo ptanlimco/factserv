@@ -120,7 +120,7 @@ try:
         if not cur.rowcount: 
             if not build["phase1"]: raise Exception("Can't perform phase 1 for buildid %s on station %s" % (buildid,station))
             cur.execute("insert into devices (state, phase, station, buildid, deviceid) values ('TESTING', 1, %s, %s, %s)", (station, buildid, deviceid))
-            ok="TESTING 1"
+            phase=1
         else:    
             state, phase = cur.fetchone()
             if state == "COMPLETE": phase = 4
@@ -133,8 +133,8 @@ try:
             if phase == 1 and not build["phase1"]: raise Exception("can't perform phase %s or any predecessor for buildid %s on station %s" % (p, buildid, station))
             state="TESTING"
             cur.execute("update devices set state=%s, phase=%s, station=%s, buildid=%s  where deviceid=%s", (state, phase, station, buildid, deviceid))
-            ok="%d" % (phase,)
         conn.commit()
+        ok="%d" % (phase,)
 
     elif service == "starttest":
         deviceid = require("deviceid")
@@ -143,7 +143,7 @@ try:
         if testname is None: testname=""
 
         cur.execute("select phase from devices where deviceid=%s and state='TESTING' and station=%s", (deviceid, station))
-        if not cur.rowcount: raise Exception("Test not in progress for device %s on station %s", deviceid, station)
+        if not cur.rowcount: raise Exception("Test not in progress for device %s on station %s" % (deviceid, station))
         phase = cur.fetchone()[0]
         cur.execute("insert into tests (deviceid, station, phase, command, testname) values (%s, %s, %s, %s, %s) returning id", (deviceid, station, phase, command, testname))
         conn.commit()
@@ -157,9 +157,10 @@ try:
 
         # get the status of specified test record
         cur.execute("select deviceid=%s and status is NULL and station=%s from tests where id=%s", (deviceid, station, testid))
-        #if not cur.rowcount: raise Exception("Invalid test ID %s", (testid,))
         if not cur.fetchone()[0]: raise Exception("Test ID %s is in wrong state for deviceid=%s" % (testid, deviceid))
         cur.execute("update tests set ended=uct(), status=%s, stdout=%s where id=%s", (status, stdout, testid))
+        # mark device as test failed if non-zero exit status
+        if status != "0": cur.execute("update devices set state='FAILED' where deviceid=%s", (deviceid,))
         conn.commit()
         ok=""
 
@@ -203,10 +204,11 @@ try:
     # print the result in 'ok'
     print "Content-type: text/plain\n\n%s" % ok   
 
-except Exception as e:
-    print "Status: 400 %s\nContent-type: text/plain\n" % str(e)
+except Exception:
+    t,v,tb=sys.exc_info();
+    print "Status: 400 %s: %s (%d)\nContent-type: text/plain\n" % (t.name, str(v), tb.tb_lineno)
+    # other output will appear if you use curl
     traceback.print_exc(file = sys.stdout)
     if station is not None: print "Station ID:",station
     for k in sorted(os.environ): print k,"=",os.environ[k]
     for k in sorted(form.keys()): print k,"=",form.getvalue(k)
-

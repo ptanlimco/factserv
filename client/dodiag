@@ -3,7 +3,8 @@
 
 # This is the test client
 
-import traceback, os, sys, httplib, time, urllib, getopt, subprocess, threading, shlex
+import traceback, os, sys, httplib, time, urllib, getopt, subprocess, threading, signal
+
 
 def die(msg):
     print msg
@@ -12,12 +13,13 @@ def die(msg):
 buildID=None
 deviceID=None
 pionicIP="192.168.111.1"
-factoryIP=None
-id_file="/tmp/deviceid.txt"
+serverIP=None
+id_file="./deviceid.txt"
+script_path="."
 
 # parse options
 try:
-    opts, args = getopt.getopt(sys.argv[1:],'p:f:')
+    opts, args = getopt.getopt(sys.argv[1:],'p:s:i:t:')
 except:
     die("""\
 Usage:
@@ -26,21 +28,20 @@ Usage:
 
 Interact with factory server and perform diagnostics. Options are:
 
-    -p ip.ad.re.ss    - specify pionic IP address, default is '192.168.111.1'
-    -f ip.ad.re.ss    - specify factory server IP address, default is to request it from pionic
-    -d /path/to/file  - specify file containing the device ID string, default '/tmp/deviceid.txt'
+    -p ip.ad.re.ss    - specify pionic IP address, default is "192.168.111.1"
+    -s ip.ad.re.ss    - specify factory server IP address, default is to request it from pionic
+    -i /path/to/file  - specify file containing the device ID string, default is "./deviceid.txt"
+    -t path           - specify path to "phaseX" test lists, default './' 
 
-The build ID must always be provided. 
+The caller must always provide the build ID.
 
-If device ID is not provided dodiag will attempt to read it from the nominal
-device ID file. If that fails it will proceed to scan the PCB barcode to use
-that as the device ID, incidentally also updating the file.
+The caller also provides the device ID if programmed. If not given, dodiag will
+attempt to read it from the nominal device ID file, and if that fails it will
+scan the PCB barcode and use that as the device ID, and will update the file.
 
 In theory one of the phase 1 diagnostics installs the device ID into permanent
-storage as required.
-
-dodiags expects to find text files named "phase1", "phase2" in the current directory. 
-
+storage if it doesn't already exist, so that it can thereafter be provided by
+the caller.
 
 """)
 
@@ -51,8 +52,11 @@ if len(args) > 1: deviceID=args[1]
 
 for opt, arg in opts:
     if opt == '-p': pionicIP=arg
-    if opt == '-f': factoryIP=arg
+    if opt == '-s': serverIP=arg
+    if opt == '-i': id_file=arg
+    if opt == '-t': scriptpath=arg.rstrip("/"); 
 
+class PionicFail(Exception): pass
 # Send a request to the pionic controller, return response 
 # The IP of the pionic controller is hard coded
 # If data is provided, it is will sent as raw POST content
@@ -65,51 +69,54 @@ def pionic(request, data=None, debug=0):
         c.request("POST","/"+request,data)
     r=c.getresponse()
     if r.status != 200:
-        raise Exception("Pionic request failed: %s" % (r.reason,))
+        raise PionicFail("%s in service %s" % (r.reason, request))
     return r.read().strip()    
 
 # display message in center or top-left of screen
 def badge(text, fg="white", bg="blue", size=90):
     pionic("display?text&badge&size=%s&fg=%s&bg=%s"%(size,fg,bg), text)
 
-def report(text, fg="white", bg="blue", size=30):
-    pionic("display?text&size=%d&fg=%s&bg=%s"%(size,fg,bg),text);
+# wrap text to 40 columns
+def wrap(text): return reduce(lambda line, word: '%s%s%s' % (line, ' \n'[(len(line)-line.rfind('\n')-1 + len(word.split('\n',1)[0]) >= 40)], word), text.split(' '))
 
-# request factory service from factoryIP
-def factory(service, options={}, stdout=None, debug=0):
+def report(text, fg="white", bg="blue", size=30):
+    pionic("display?text&size=%d&fg=%s&bg=%s"%(size,fg,bg),wrap(text));
+
+# request factory service from serverIP
+class ServerFail(Exception): pass
+def server(service, options={}, debug=0):
     options["service"]=service;
-    c=httplib.HTTPConnection(factoryIP);
+    c=httplib.HTTPConnection(serverIP);
     c.set_debuglevel(debug)
     options=urllib.urlencode(options)
-    if len(options)>80:
-        # use post if url is too long
+    if len(options)>256:
+        # Prefer get so we have a log, but use post if URL is very long
         c.request("POST","/cgi-bin/factory", options, {"Content-Type":"application/x-www-form-urlencoded"})
     else:
         c.request("GET","/cgi-bin/factory?%s"%options)
     r=c.getresponse()
     if r.status != 200:
-        raise Exception("Factory service %s failed: %s" % (service, r.reason))
+        raise ServerFail("%s in service %s" % (r.reason, service))
     return r.read().strip()    
 
 def save_deviceID(deviceID):
-    try:
-        with open(id_file) as f: f.write(deviceID)
-    except:
-	pass
+    print "Writing %s to %s..." % (deviceID, id_file) 
+    with open(id_file,"w") as f: f.write(deviceID)
 
 def load_deviceID():
     deviceID=None	
     try:
-	with open(id_file) as f: deviceID=f.readline().strip()
-	if deviceID == "": deviceID = None
+	with open(id_file,"r") as f: deviceID=f.readline().strip()
     except:
 	pass
+    if deviceID == "": deviceID = None
     return deviceID
 
 def perform(command, timeout):
-    # Support any shell command, let the shell be session leader so we can kill it and all its children
-    p = subprocess.Popen(["/bin/sh","-c",command],stdout=PIPE,stderr=subprocess.STDOUT, preexec_fn=os.setsid)
-    t = threading.timer(timeout, os.killpg, (p.pid, signal.SIGKILL))
+    print "Starting '%s' for max %d seconds..." % (command, timeout)
+    # Support any shell command, let the shell be session leader so os.killpg can kill it and its children
+    p = subprocess.Popen(["/bin/sh","-c",command],stdout=subprocess.PIPE,stderr=subprocess.STDOUT, preexec_fn=os.setsid)
+    t = threading.Timer(timeout, os.killpg, (p.pid, signal.SIGKILL))
     try:
         t.start()
         stdout = p.communicate()[0]
@@ -118,11 +125,17 @@ def perform(command, timeout):
         t.cancel()
     p.stdout.close()
     status=p.returncode
-    if expired: 
+    if expired:
         stdout=stdout+"\nTIMEOUT"
         if not status: status=-99
+    if stdout=="": stdout="No output"    
+    print "Output:"    
+    for l in stdout.splitlines(): print ">",l
+    print "Exit status:",status
     return (status, stdout)
 
+
+class TestFail(Exception): pass
 try:
     badge("Test in progress\n正在测试中")
 
@@ -130,37 +143,45 @@ try:
 
     print "Pionic IP is", pionicIP 
 
-    if factoryIP is None:
+    if serverIP is None:
         print "Factory IP unknown, requesting from pionic"
-        factoryIP=pionic("factory")
-    print "Factory IP is",factoryIP
+        serverIP=pionic("factory")
+    print "Server IP is",serverIP
 
     if deviceID is None: deviceID = load_deviceID()
     if deviceID is None:
         print "Provisioning deviceID"
-        factory("newdevice",{"buildid": buildID})
+        server("newdevice",{"buildid": buildID})
         badge("Scan barcode\n扫描条形码", fg="black", bg="yellow")
         deviceID=pionic("getbar")
         badge("Test in progress\n正在测试中")
 	print "Got device ID, updating server",deviceID
-        factory("newdevice",{"deviceid":deviceID, "buildid": buildID})
-        print "Updating device ID file" 
-        with open("/tmp/dodiag.deviceID.txt","w") as f: f.write(deviceID)
+        server("newdevice",{"deviceid":deviceID, "buildid": buildID})
+        save_deviceID(deviceID)
     print "Device ID is", deviceID    
 
-    phase=factory("startdiag",{"deviceid":deviceID, "buildid":buildID})
+    phase=server("startdiag",{"deviceid":deviceID, "buildid":buildID})
 
-    print "Performing phase %s tests"%phase
-    for l in open("phase%s" % phase):
-        l=l.split('#',2)[0].strip()
+    script="%s/phase%s" % (script_path, phase)
+    print "Using script %s"%(script,)
+    line=0
+    for l in open(script):
+        line+=1
+        l=l.split('#',1)[0].strip()
         if l == "": continue
-        print "Found '%s'" % (l,) 
-        t=l.split(':',3)
-        if len(t) != 3: raise Exception("Invalid line in phase%d: '%s'"%(phase,l))
+        print "Line %d: %s" % (line,l)
+        t=l.split(':',2)
+        if len(t) != 3: raise TestFail("%s line %d is invalid!" % (script, line))
         testname=" ".join(t[0].split())
-        timeout=int(t[1] if t[1] else "0")
-        if not timeout: timeout=60
+        if testname=="": raise TestFail("Null test name in %s line %d" % (script, line))
+        try:
+            timeout=int(t[1] if t[1] else "60")
+            if (timeout <= 0): raise Exception
+        except:
+            raise TestFail("Invalid timeout in %s line %s" % (script, line))
         command=" ".join(t[2].split())
+        if command == "": raise TestFail("Null command in %s line %d" % (script, line))
+        if command.find(":") == 0: raise TestFail("Command starts with colon in %s line %d" % (script, line))
         report(("Test in progress - 正在测试中\n"+
                 "Device ID : %s\n"+
                 "Build ID  : %s\n"+
@@ -168,15 +189,17 @@ try:
                 "Test      : %s\n"+
                 "Timeout   : %s\n"+
                 "Command   : %s\n") % (deviceID, buildID, phase, testname, timeout, command))
-        testid=factory("starttest", {"deviceid":deviceID, "testname":testname, "command":command})
-        print "Starting '%s' for max %d seconds..." % (command, timeout)
+        testid=server("starttest", {"deviceid":deviceID, "testname":testname, "command":command})
         status, stdout=perform(command, timeout)
-        factory("endtest", {"deviceid":deviceID, "testid":testid, "status":status, "stdout":stdout})
+        server("endtest", {"deviceid":deviceID, "testid":testid, "status":status, "stdout":stdout})
+        if status: raise TestFail("'%s' exit status %d (%s line %d)" % (testname, status, script, line))
 
-    factory("enddiag", {"deviceid":deviceID})
+    server("enddiag", {"deviceid":deviceID})
 
     badge(deviceID+"\nTEST PASSED\n通过测试", bg="green");
 
-except Exception as e:
-    report("TEST FAILED - 测试失败\n\n"+traceback.format_exc(), bg="red", fg="white")
+except:
+    traceback.print_exc()
+    t,v,tb=sys.exc_info()
+    report("TEST FAILED - 测试失败\n\n%s@%d: %s" % (t.__name__,tb.tb_lineno,str(v)), bg="red", fg="white")
 

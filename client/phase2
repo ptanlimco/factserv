@@ -6,4 +6,4 @@
 #       'seconds' is command timeout, if blank the default is 60 seconds
 #       'command' is the executable command and its arguments
 
-Final test      :: ls -al
+Final test      :: echo Start...; sleep 5; echo End...

@@ -7,7 +7,7 @@ if len(sys.argv) < 3:
 
 
 # preexec_fn=os.setsid and os.killpg work together to do the magic
-p = subprocess.Popen(["/bin/sh","-c",sys.argv[2]], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, preexec_fn=os.setsid)
+p = subprocess.Popen(["/bin/sh","-c"," ".join(sys.argv[2:])], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, preexec_fn=os.setsid)
 #p = subprocess.Popen(sys.argv[2:], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, preexec_fn=os.setsid)
 t = threading.Timer(int(sys.argv[1]), os.killpg, (p.pid, signal.SIGKILL))
 
