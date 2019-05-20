@@ -6,4 +6,4 @@
 #       'seconds' is command timeout, if blank the default is 60 seconds
 #       'command' is the executable command and its arguments
 
-Final test      :: echo Start...; sleep 2; echo End...
+The real final test :1: echo This test will intentionally fail; exit 1

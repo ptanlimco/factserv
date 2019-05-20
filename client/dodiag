@@ -1,37 +1,31 @@
 #!/usr/bin/python
 # DO NOT REMOVE THIS LINE - coding: utf-8
 
-# This is the test client
+# This is the DUT test executive, runs on the target.
+import traceback, os, sys, httplib, urllib, getopt, subprocess, threading, signal
 
-import traceback, os, sys, httplib, time, urllib, getopt, subprocess, threading, signal
-
-
-def die(msg):
-    print msg
-    sys.exit(1)
-
-buildID=None
-deviceID=None
-pionicIP="192.168.111.1"
-serverIP=None
-id_file="./deviceid.txt"
-script_path="."
+buildID=None                    # must be specified on command line
+deviceID=None                   # can be specified, otherwise we'll try to discover it
+id_file="./deviceid.txt"        # file to read or write when deviceID not explicitly given
+pionicIP="192.168.111.1"        # IP address of pionic controller
+serverIP=None                   # IP address of the factory server                      
+script_path="."                 # Path to phaseX scripts
 
 # parse options
 try:
     opts, args = getopt.getopt(sys.argv[1:],'p:s:i:t:')
 except:
-    die("""\
+    print """\
 Usage:
 
     dodiags [options] buildID [deviceID]
 
 Interact with factory server and perform diagnostics. Options are:
 
-    -p ip.ad.re.ss    - specify pionic IP address, default is "192.168.111.1"
-    -s ip.ad.re.ss    - specify factory server IP address, default is to request it from pionic
-    -i /path/to/file  - specify file containing the device ID string, default is "./deviceid.txt"
-    -t path           - specify path to "phaseX" test lists, default './' 
+    -p ip.ad.re.ss    - pionic IP address, default is "192.168.111.1"
+    -s ip.ad.re.ss    - factory server IP address, default is to request it from pionic
+    -i /path/to/file  - file to write deviceID if not given on the command line, default is "./deviceid.txt"
+    -t path           - path to "phaseX" test lists, default './' 
 
 The caller must always provide the build ID.
 
@@ -42,26 +36,26 @@ scan the PCB barcode and use that as the device ID, and will update the file.
 In theory one of the phase 1 diagnostics installs the device ID into permanent
 storage if it doesn't already exist, so that it can thereafter be provided by
 the caller.
+"""
+    sys.exit(1)
 
-""")
-
-if len(args) < 1 or len(args) > 2: die("Must specify build ID")
+if len(args) < 1 or len(args) > 2: raise Exception("Build ID not specified")
 
 buildID=args[0]
 if len(args) > 1: deviceID=args[1]
 
 for opt, arg in opts:
     if opt == '-p': pionicIP=arg
-    if opt == '-s': serverIP=arg
-    if opt == '-i': id_file=arg
-    if opt == '-t': scriptpath=arg.rstrip("/"); 
+    elif opt == '-s': serverIP=arg
+    elif opt == '-i': id_file=arg
+    elif opt == '-t': scriptpath=arg.rstrip("/"); 
 
 class PionicFail(Exception): pass
 # Send a request to the pionic controller, return response 
 # The IP of the pionic controller is hard coded
 # If data is provided, it is will sent as raw POST content
 def pionic(request, data=None, debug=0):
-    c=httplib.HTTPConnection(pionicIP);
+    c=httplib.HTTPConnection(pionicIP)
     c.set_debuglevel(debug)
     if data is None:
         c.request("GET","/"+request)
@@ -74,44 +68,36 @@ def pionic(request, data=None, debug=0):
 
 # display message in center or top-left of screen
 def badge(text, fg="white", bg="blue", size=90):
-    pionic("display?text&badge&size=%s&fg=%s&bg=%s"%(size,fg,bg), text)
+    if text is None:
+        pionic("display?clear&fg=%s&bg=%s"%(fg,bg))
+    else:
+        pionic("display?text&badge&size=%s&fg=%s&bg=%s"%(size,fg,bg), text)
 
 # wrap text to 40 columns
 def wrap(text): return reduce(lambda line, word: '%s%s%s' % (line, ' \n'[(len(line)-line.rfind('\n')-1 + len(word.split('\n',1)[0]) >= 40)], word), text.split(' '))
 
 def report(text, fg="white", bg="blue", size=30):
-    pionic("display?text&size=%d&fg=%s&bg=%s"%(size,fg,bg),wrap(text));
+    pionic("display?text&size=%d&fg=%s&bg=%s"%(size,fg,bg),wrap(text))
 
 # request factory service from serverIP
 class ServerFail(Exception): pass
 def server(service, options={}, debug=0):
-    options["service"]=service;
-    c=httplib.HTTPConnection(serverIP);
+    options["service"]=service
+    c=httplib.HTTPConnection(serverIP)
     c.set_debuglevel(debug)
     options=urllib.urlencode(options)
-    if len(options)>256:
-        # Prefer get so we have a log, but use post if URL is very long
-        c.request("POST","/cgi-bin/factory", options, {"Content-Type":"application/x-www-form-urlencoded"})
-    else:
+    if len(options)<512:
+        # Prefer GET so there's a log, but use POST if the URL is very long
         c.request("GET","/cgi-bin/factory?%s"%options)
+    else:
+        c.request("POST","/cgi-bin/factory", options, {"Content-Type":"application/x-www-form-urlencoded"})
     r=c.getresponse()
     if r.status != 200:
-        raise ServerFail("%s in service %s" % (r.reason, service))
+        raise ServerFail("Service %s failed with '%s'" % (service, r.reason))
     return r.read().strip()    
 
-def save_deviceID(deviceID):
-    print "Writing %s to %s..." % (deviceID, id_file) 
-    with open(id_file,"w") as f: f.write(deviceID)
-
-def load_deviceID():
-    deviceID=None	
-    try:
-	with open(id_file,"r") as f: deviceID=f.readline().strip()
-    except:
-	pass
-    if deviceID == "": deviceID = None
-    return deviceID
-
+# perform an arbitrary shell command with timeout, return exit status and
+# command's stdout/stderr
 def perform(command, timeout):
     print "Starting '%s' for max %d seconds..." % (command, timeout)
     # Support any shell command, let the shell be session leader so os.killpg can kill it and its children
@@ -135,12 +121,12 @@ def perform(command, timeout):
     return (status, stdout)
 
 
+# This is the main test loop
 class TestFail(Exception): pass
 try:
     badge("Test in progress\n正在测试中")
 
     print "Build ID is", buildID
-
     print "Pionic IP is", pionicIP 
 
     if serverIP is None:
@@ -148,16 +134,18 @@ try:
         serverIP=pionic("factory")
     print "Server IP is",serverIP
 
-    if deviceID is None: deviceID = load_deviceID()
     if deviceID is None:
-        print "Provisioning deviceID"
+        print "Proivisioning deviceID"
         server("newdevice",{"buildid": buildID})
         badge("Scan barcode\n扫描条形码", fg="black", bg="yellow")
         deviceID=pionic("getbar")
-        badge("Test in progress\n正在测试中")
-	print "Got device ID, updating server",deviceID
+        badge(None)
+	print "Got %s, updating server" % (deviceID,)
         server("newdevice",{"deviceid":deviceID, "buildid": buildID})
-        save_deviceID(deviceID)
+        # write to a file for later
+        print "Updating %s..." % (id_file,)
+        with open(id_file,"w") as f: f.write(deviceID)
+    
     print "Device ID is", deviceID    
 
     phase=server("startdiag",{"deviceid":deviceID, "buildid":buildID})
@@ -196,7 +184,7 @@ try:
 
     server("enddiag", {"deviceid":deviceID})
 
-    badge(deviceID+"\nTEST PASSED\n通过测试", bg="green");
+    badge(deviceID+"\nTEST PASSED\n通过测试", bg="green")
 
 except:
     traceback.print_exc()
