@@ -107,15 +107,20 @@ def load_deviceID():
     return deviceID
 
 def perform(command, timeout):
-    p = subprocess.Popen(command,shell=True,stdout=PIPE,stderr=subprocess.STDOUT)
-    t = threading.timer(timeout, p.kill)
+    # Support any shell command, let the shell be session leader so we can kill it and all its children
+    p = subprocess.Popen(["/bin/sh","-c",command],stdout=PIPE,stderr=subprocess.STDOUT, preexec_fn=os.setsid)
+    t = threading.timer(timeout, os.killpg, (p.pid, signal.SIGKILL))
     try:
         t.start()
         stdout = p.communicate()[0]
     finally:
+        expired=not t.isAlive()
         t.cancel()
     p.stdout.close()
     status=p.returncode
+    if expired: 
+        stdout=stdout+"\nTIMEOUT"
+        if not status: status=-99
     return (status, stdout)
 
 try:
@@ -164,9 +169,9 @@ try:
                 "Timeout   : %s\n"+
                 "Command   : %s\n") % (deviceID, buildID, phase, testname, timeout, command))
         testid=factory("starttest", {"deviceid":deviceID, "testname":testname, "command":command})
-        print "Running '%s' for max %d seconds..." % (command, timeout)
-        status=0
-        factory("endtest", {"deviceid":deviceID, "testid":testid, "status":status, "stdout":"Nothing actually happened!"})
+        print "Starting '%s' for max %d seconds..." % (command, timeout)
+        status, stdout=perform(command, timeout)
+        factory("endtest", {"deviceid":deviceID, "testid":testid, "status":status, "stdout":stdout})
 
     factory("enddiag", {"deviceid":deviceID})
 
