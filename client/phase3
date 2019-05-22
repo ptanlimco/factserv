@@ -1,9 +1,4 @@
-# phase2 test list for SIC
-# comments and whitespace are ignored
-# lines are in format:
-#  name : timeout : command
-# Where 'name' is any arbitrary string, may not contan a : or #, this appears in the web status page
-#       'seconds' is command timeout, if blank the default is 60 seconds
-#       'command' is the executable command and its arguments
+# phase3 test list example
 
-The real final test :1: echo This test will intentionally fail; exit 1
+# This test will pass or fail at random
+Final test : 5 : c=$(tr -dc AB < /dev/urandom 2>/dev/null | head -c1); if [ "$c" = A ]; then echo Test randomly failed; exit 1; else echo Test randomly passed; fi

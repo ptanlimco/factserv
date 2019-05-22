@@ -6,14 +6,23 @@ import traceback, os, sys, httplib, urllib, getopt, subprocess, threading, signa
 
 buildID=None                    # must be specified on command line
 deviceID=None                   # can be specified, otherwise we'll try to discover it
-id_file="./deviceid.txt"        # file to read or write when deviceID not explicitly given
 pionicIP="192.168.111.1"        # IP address of pionic controller
 serverIP=None                   # IP address of the factory server                      
 script_path="."                 # Path to phaseX scripts
 
+# Things we say, in various lanuages
+test_in_progress=("Test in progress", "Pruebas en curso", "正在测试中" )
+scan_barcode    =("Scan barcode",     "Escanear código",  "扫描条形码" )
+test_passed     =("Test Passed",      "Prueba aprobada",  "通过测试"  )
+test_failed     =("Test Failed",      "Prueba fallida" ,  "测试失败"  )
+
+# Given one of the strings above, return array of languages of interest
+# In this case, English and Chinese
+def language(s): return [s[0],s[2]]
+
 # parse options
 try:
-    opts, args = getopt.getopt(sys.argv[1:],'p:s:i:t:')
+    opts, args = getopt.getopt(sys.argv[1:],'p:s:t:')
 except:
     print """\
 Usage:
@@ -24,18 +33,16 @@ Interact with factory server and perform diagnostics. Options are:
 
     -p ip.ad.re.ss    - pionic IP address, default is "192.168.111.1"
     -s ip.ad.re.ss    - factory server IP address, default is to request it from pionic
-    -i /path/to/file  - file to write deviceID if not given on the command line, default is "./deviceid.txt"
     -t path           - path to "phaseX" test lists, default './' 
 
 The caller must always provide the build ID.
 
 The caller also provides the device ID if programmed. If not given, dodiag will
 attempt to read it from the nominal device ID file, and if that fails it will
-scan the PCB barcode and use that as the device ID, and will update the file.
+scan the PCB barcode and use that as the device ID. 
 
-In theory one of the phase 1 diagnostics installs the device ID into permanent
-storage if it doesn't already exist, so that it can thereafter be provided by
-the caller.
+A phase 1 diagnostic must program DEVICEID from the environment into long term
+storage where the caller can find it.
 """
     sys.exit(1)
 
@@ -47,7 +54,6 @@ if len(args) > 1: deviceID=args[1]
 for opt, arg in opts:
     if opt == '-p': pionicIP=arg
     elif opt == '-s': serverIP=arg
-    elif opt == '-i': id_file=arg
     elif opt == '-t': scriptpath=arg.rstrip("/"); 
 
 class PionicFail(Exception): pass
@@ -73,8 +79,8 @@ def badge(text, fg="white", bg="blue", size=90):
     else:
         pionic("display?text&badge&size=%s&fg=%s&bg=%s"%(size,fg,bg), text)
 
-# wrap text to 40 columns
-def wrap(text): return reduce(lambda line, word: '%s%s%s' % (line, ' \n'[(len(line)-line.rfind('\n')-1 + len(word.split('\n',1)[0]) >= 40)], word), text.split(' '))
+# wrap text to 42 columns
+def wrap(text): return reduce(lambda line, word: '%s%s%s' % (line, ' \n'[(len(line)-line.rfind('\n')-1 + len(word.split('\n',1)[0]) >= 42)], word), text.split(' '))
 
 def report(text, fg="white", bg="blue", size=30):
     pionic("display?text&size=%d&fg=%s&bg=%s"%(size,fg,bg),wrap(text))
@@ -110,21 +116,22 @@ def perform(command, timeout):
         expired=not t.isAlive()
         t.cancel()
     p.stdout.close()
+    stdout=stdout.strip()
+    if not stdout: stdout="NO OUTPUT\n"  
     status=p.returncode
     if expired:
-        stdout=stdout+"\nTIMEOUT"
+        stdout+="\nTIMEOUT\n"
         if not status: status=-99
-    if stdout=="": stdout="No output"    
-    print "Output:"    
-    for l in stdout.splitlines(): print ">",l
-    print "Exit status:",status
+    print "Status:",status
+    print "Stdout:"    
+    for l in stdout.splitlines(): print "  ",l
     return (status, stdout)
 
 
 # This is the main test loop
 class TestFail(Exception): pass
 try:
-    badge("Test in progress\n正在测试中")
+    badge("\n".join(language(test_in_progress)))
 
     print "Build ID is", buildID
     print "Pionic IP is", pionicIP 
@@ -137,16 +144,21 @@ try:
     if deviceID is None:
         print "Proivisioning deviceID"
         server("newdevice",{"buildid": buildID})
-        badge("Scan barcode\n扫描条形码", fg="black", bg="yellow")
-        deviceID=pionic("getbar")
+        badge("\n".join(language(scan_barcode)), fg="black", bg="yellow")
+        while True:
+           deviceID=pionic("getbar?poll&timeout=4") # poll with shortish timeout
+           if deviceID != "": break
         badge(None)
 	print "Got %s, updating server" % (deviceID,)
         server("newdevice",{"deviceid":deviceID, "buildid": buildID})
-        # write to a file for later
-        print "Updating %s..." % (id_file,)
-        with open(id_file,"w") as f: f.write(deviceID)
-    
+   
     print "Device ID is", deviceID    
+    
+    # Pass info to test processes in the environment
+    os.environ["SERVERIP"]=serverIP
+    os.environ["PIONICIP"]=pionicIP
+    os.environ["BUILDID"]=buildID
+    os.environ["DEVICEID"]=deviceID 
 
     phase=server("startdiag",{"deviceid":deviceID, "buildid":buildID})
 
@@ -155,22 +167,23 @@ try:
     line=0
     for l in open(script):
         line+=1
-        l=l.split('#',1)[0].strip()
-        if l == "": continue
-        print "Line %d: %s" % (line,l)
+        l=l.split('#')[0].strip()
+        if not l: continue
+        print "%s line %d: %s" % (script, line, l)
         t=l.split(':',2)
-        if len(t) != 3: raise TestFail("%s line %d is invalid!" % (script, line))
+        if len(t) != 3: raise TestFail("%s line %d is invalid" % (script, line))
         testname=" ".join(t[0].split())
-        if testname=="": raise TestFail("Null test name in %s line %d" % (script, line))
+        if not testname: raise TestFail("%s line %d name is invalid" % (script, line))
         try:
-            timeout=int(t[1] if t[1] else "60")
-            if (timeout <= 0): raise Exception
-        except:
-            raise TestFail("Invalid timeout in %s line %s" % (script, line))
+            timeout=int(t[1].strip() or "60")
+            if (timeout <= 0): raise ValueError
+        except ValueError:
+            raise TestFail("%s line %d timeout is invalid" % (script, line))
         command=" ".join(t[2].split())
-        if command == "": raise TestFail("Null command in %s line %d" % (script, line))
-        if command.find(":") == 0: raise TestFail("Command starts with colon in %s line %d" % (script, line))
-        report(("Test in progress - 正在测试中\n"+
+        if not command: raise TestFail("%s line %d command is invalid" % (script, line))
+        # catch too many ::'s
+        if command.startswith(":"): raise TestFail("%s line %d command is invalid" % (script, line))
+        report(("\n".join(language(test_in_progress))+"\n\n"+
                 "Device ID : %s\n"+
                 "Build ID  : %s\n"+
                 "Phase     : %s\n"+
@@ -184,10 +197,11 @@ try:
 
     server("enddiag", {"deviceid":deviceID})
 
-    badge(deviceID+"\nTEST PASSED\n通过测试", bg="green")
+    badge("\n".join(language(test_passed))+"\n"+deviceID, bg="green")
 
 except:
-    traceback.print_exc()
     t,v,tb=sys.exc_info()
-    report("TEST FAILED - 测试失败\n\n%s@%d: %s" % (t.__name__,tb.tb_lineno,str(v)), bg="red", fg="white")
+    traceback.print_exc()
+    report("\n".join(language(test_failed))+"\n\n%s@%d: %s" % (t.__name__,tb.tb_lineno,str(v)), bg="red", fg="white")
+    sys.exit(1)
 

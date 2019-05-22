@@ -1,13 +1,21 @@
-# phase1 test list for SIC
-# comments and whitespace are ignored
-# lines are in format:
-#  name : timeout : command
-# Where 'name' is any arbitrary string, may not contan a : or #
-#       'seconds' is command timeout, if blank the default is 60 seconds
-#       'command' is the exsecutable command and any arguments
+# Phase1 test list example
+#
+# Comments and whitespace are ignored.
+# One test per line, in the format:
+#
+#       name : timeout : command
+#
+# Where:
+#       'name' is any arbitrary string used to identify the test, may not contain ":"
+#       'seconds' is command timeout, must be > 0, but if blank the default is 60 seconds
+#       'command' is a command to be executed by /bin/sh
 
-This is the 1st test            :: ls -al && sleep 2
+# Phase1 must always permanently store the device ID somewhere platform-specific.
+# For this example, we'll just write it to home directory.
+Store DeviceID      :: case "$DEVICEID" in BYT*) echo $DEVICEID > ~/deviceid.txt;; *) echo "DeviceID '$DEVICEID' is invalid"; exit 1;; esac 
 
-Testing the tester              :: ps auxf && sleep 2
+Some kind of test   :: set && sleep 1
 
-Yet another test testing test   :: ps auxf && sleep 2
+Another test        :: ps auxf && sleep 1
+
+Yet another test    :: ls -al && sleep 1
