@@ -1,25 +1,23 @@
 #!/usr/bin/python
 
-class BadSubmit(Exception): pass 
+class BadSubmit(Exception): pass
 
 def escape(s):
+    xlat = {'&':'amp', '<':'lt', '>':'gt', '"':'quot', '\'':'#39', '%':'#37'}
     s = str(s)
-    s = s.replace("&", "&amp;") # Must be done first!
-    s = s.replace("<", "&lt;")
-    s = s.replace(">", "&gt;")
-    s = s.replace('"', "&quot;")
+    for x in xlat: s.replace(x,'&%s;'%xlat[x])
     return s
 
 def select(name, options, selected):
     s="<select name='%s'>" % escape(name)
     for o in options:
         s += "<option value='%s' %s>%s</option>" % (escape(o),"selected" if o == selected else "",escape(options[o]))
-    s += "</select>"    
+    s += "</select>"
     return s;
 
-def table(id, rows):
+def table(hclass, rows):
     s = "<table>"
-    if id: s = "<table id='%s'>" % (escape(id),)
+    if hclass: s = "<table class='%s'>" % (escape(hclass),)
     for row in rows:
         s += "<tr>"
         for r in row: s += "<td>%s</td>" % (r,)
@@ -27,72 +25,88 @@ def table(id, rows):
     s += "</table>"
     return s
 
+# return html string with escaped values inserted, redundant whitespace removed
+def html(string, values):
+    if values is not None:
+        string = string % tuple("" if s is None else escape(s) for s in values)
+    return ' '.join(string.split())
+class BadSubmit(Exception): pass
+
 try:
     import traceback, re, cgi, sys, psycopg2
-
-    # return html string with escaped values inserted, redundant whitespace removed
-    def html(string, values):
-        if values is not None:
-            string = string % tuple("" if s is None else escape(s) for s in values)
-        return ' '.join(string.split())
+    from urllib import urlencode
 
     conn=psycopg2.connect('dbname=factory')
     cur=conn.cursor()
     form=cgi.FieldStorage();
-    
-    id_types={"=":"is","!=":"is not","<":"is less than",">":"is greater than"}
+
     deviceid_types={"=":"is","!=":"is not","like":"is like","not like":"is not like"}
-    buildid_types={"=":"is","!=":"is not","like":"is like","not like":"is not like"}
     started_types={"=":"is","!=":"is not","<":"is before",">":"is after"}
     ended_types={"=":"is","!=":"is not","<":"is before",">":"is after"}
     station_types={"=":"is","!=":"is not"}
-    state_types={"=":"is","!=":"is not"}
     phase_types={"=":"is","!=":"is not"}
+    testname_types={"=":"is","!=":"is not","like":"is like","not like":"is not like"}
+    command_types={"=":"is","!=":"is not","like":"is like","not like":"is not like"}
+    status_types={"=":"is","!=":"is not","<":"is less than",">":"is greater than"}
+    stdout_types={"=":"is","!=":"is not","like":"is like","not like":"is not like"}
+
+    # get possible test states
+    cur.execute("select unnest(enum_range(NULL::states))")
+    states=[r[0] for r in cur.fetchall()]
 
     if form.getvalue("deed") != "Reset":
 
         deviceid=form.getvalue('deviceid')
         deviceid_type=form.getvalue('deviceid_type')
-        buildid=form.getvalue('buildid')
-        buildid_type=form.getvalue('buildid_type')
-        created=form.getvalue('created')
-        created_type=form.getvalue('created_type')
-        updated=form.getvalue('updated')
-        updated_type=form.getvalue('updated_type')
-        state=form.getvalue('state')
-        state_type=form.getvalue('state_type')
-        phase=form.getvalue('phase')
-        phase_type=form.getvalue('phase_type')
+        started=form.getvalue('started')
+        started_type=form.getvalue('started_type')
+        ended=form.getvalue('ended')
+        ended_type=form.getvalue('ended_type')
         station=form.getvalue('station')
         station_type=form.getvalue('station_type')
+        phase=form.getvalue('phase')
+        phase_type=form.getvalue('phase_type')
+        testname=form.getvalue('testname')
+        testname_type=form.getvalue('testname_type')
+        command=form.getvalue('command')
+        command_type=form.getvalue('command_type')
+        status=form.getvalue('status')
+        status_type=form.getvalue('status_type')
+        stdout=form.getvalue('stdout')
+        stdout_type=form.getvalue('stdout_type')
 
     else:
-        
+
         deviceid=None
         deviceid_type=None
-        buildid=None
-        buildid_type=None
-        created=None
-        created_type=None
-        updated=None
-        updated_type=None
-        state=None
-        state_type=None
-        phase=None
-        phase_type=None
+        started=None
+        started_type=None
+        ended=None
+        ended_type=None
         station=None
         station_type=None
+        phase=None
+        phase_type=None
+        testname=None
+        testname_type=None
+        command=None
+        command_type=None
+        status=None
+        status_type=None
+        stdout=None
+        stdout_type=None
 
-        
-    content="<form method=post>" + table( "query", 
+    content="<form method=get>" + table( "query",
     [
-        ["Device ID", select("deviceid_type",deviceid_types, deviceid_type or "="),  html("<input type=text name=deviceid value='%s'>",(deviceid,))],
-        ["Build ID",  select("buildid_type", buildid_types, buildid_type or "="),    html("<input type=text name=buildid value='%s'>",(buildid,))],
-        ["Created",   select("created_type", created_types, created_type or "="),    html("<input type=text name=created value='%s'>",(created,))],
-        ["Updated",   select("updated_type", updated_types, updated_type or "="),    html("<input type=text name=updated value='%s'>",(updated,))],
-        ["State",     select("state_type", state_types, state_type or "="),          html("<input type=text name=state value='%s'>",(state,))],
-        ["Phase",     select("phase_type", phase_types, phase_type or "="),          html("<input type=text name=phase value='%s'>",(phase,))],
-        ["Station",   select("station_type", station_types, station_type or "="),    html("<input type=text name=station value='%s'>",(station,))]
+        ("Device ID", select("deviceid_type",deviceid_types, deviceid_type or "="),  html("<input type=text name=deviceid value='%s'>",(deviceid,))),
+        ("Started",   select("started_type", started_types, started_type or "="),    html("<input type=text name=started value='%s'>",(started,))),
+        ("Ended",     select("ended_type", ended_types, ended_type or "="),          html("<input type=text name=ended value='%s'>",(ended,))),
+        ("Station",   select("station_type", station_types, station_type or "="),    html("<input type=text name=station value='%s'>",(station,))),
+        ("Phase",     select("phase_type", phase_types, phase_type or "="),          html("<input type=text name=phase value='%s'>",(phase,))),
+        ("Test Name", select("testname_type",testname_types, testname_type or "="),  html("<input type=text name=testname value='%s'>",(testname,))),
+        ("Command",   select("command_type",command_types, command_type or "="),     html("<input type=text name=command value='%s'>",(command,))),
+        ("Status",    select("status_type",status_types, status_type or "="),        html("<input type=text name=status value='%s'>",(status,))),
+        ("Stdout",    select("stdout_type",stdout_types, stdout_type or "="),        html("<input type=text name=stdout value='%s'>",(stdout,))),
     ])+"<input type=submit name=deed value=Submit><input type=submit name=deed value=Reset></form><hr>"
 
     where=[]
@@ -101,54 +115,63 @@ try:
         if deviceid_type not in deviceid_types: raise BadSubmit("Invalid deviceid_type %s" % (deviceid_type,))
         where += [cur.mogrify("deviceid %s %%s" % (deviceid_type,) ,(deviceid,))]
 
-    if buildid:
-        if buildid_type not in buildid_types: raise BadSubmit("Invalid buildid_type %s" % (buildid_type,))
-        where += [cur.mogrify("buildid %s %%s" % (buildid_type,) ,(buildid,))]
-    
-    if created:
-        if created_type not in created_types: raise BadSubmit("Invalid created_type %s" % (created_type,))
-        where += [cur.mogrify("created %s %%s" % (created_type,) ,(created,))]
-    
-    if updated:
-        if updated_type not in updated_types: raise BadSubmit("Invalid updated_type %s" % (updated_type,))
-        where += [cur.mogrify("updated %s %%s" % (updated_type,) ,(updated,))]
+    if started:
+        if started_type not in started_types: raise BadSubmit("Invalid started_type %s" % (started_type,))
+        where += [cur.mogrify("started %s %%s" % (started_type,) ,(started,))]
 
-    if state:
-        if state_type not in state_types: raise BadSubmit("Invalid state_type %s" % (state_type,))
-        where += [cur.mogrify("state %s %%s" % (state_type,) ,(state,))]
+    if ended:
+        if ended_type not in ended_types: raise BadSubmit("Invalid ended_type %s" % (ended_type,))
+        where += [cur.mogrify("ended %s %%s" % (ended_type,) ,(ended,))]
 
-    if phase:
-        if phase_type not in phase_types: raise BadSubmit("Invalid phase_type %s" % (phase_type,))
-        where += [cur.mogrify("phase %s %%s" % (phase_type,) ,(phase,))]
-    
     if station:
         if station_type not in station_types: raise BadSubmit("Invalid station_type %s" % (station_type,))
         where += [cur.mogrify("station %s %%s" % (station_type,) ,(station,))]
 
-    cur.execute("select deviceid, buildid, created, updated, state, phase, station from devices "+("where " + " and ".join(where) if where else "")+" order by updated desc limit 100")
+    if phase:
+        if phase_type not in phase_types: raise BadSubmit("Invalid phase_type %s" % (phase_type,))
+        where += [cur.mogrify("phase %s %%s" % (phase_type,) ,(phase,))]
+
+    if testname:
+        if testname_type not in testname_types: raise BadSubmit("Invalid testname_type %s" % (testname_type,))
+        where += [cur.mogrify("testname %s %%s" % (testname_type,) ,(testname,))]
+
+    if command:
+        if command_type not in command_types: raise BadSubmit("Invalid command_type %s" % (command_type,))
+        where += [cur.mogrify("command %s %%s" % (command_type,) ,(command,))]
+
+    if status:
+        if status_type not in status_types: raise BadSubmit("Invalid status_type %s" % (status_type,))
+        where += [cur.mogrify("status %s %%s" % (status_type,) ,(status,))]
+
+    if stdout:
+        if stdout_type not in stdout_types: raise BadSubmit("Invalid stdout_type %s" % (stdout_type,))
+        where += [cur.mogrify("stdout %s %%s" % (stdout_type,) ,(stdout,))]
+
+    cur.execute("select deviceid, started, ended, station, phase, substring(testname,1,50), substring(command,1,50), status, substring(split_part(stdout,E'\n',1),1,50) from tests "+("where " + " and ".join(where) if where else "")+" order by id desc limit 100")
     if not cur.rowcount:
         content += "No match!"
     else:
-        content += table("data", [["Device ID","Build ID","Created","Updated","State","Phase","Station"]] + [row for row in cur]);
+        content += table("data", [("Device ID","Started","Ended","Station","Phase","Test Name","Command", "Status", "Output")] + [row for row in cur]);
 
     # print generated content
     print "Content-type: text/html\n\n" + html("""
     <!DOCTYPE html>
     <html>
     <head>
-    <title>Device Status</title>
+    <title>Test Status</title>
     <style>
-        td { padding-right: 10px; padding-left: 10px; padding-top: 4px; padding-bottom: 4px; }
-        #query { margin: 20px }
-        #query td:nth-child(1) { text-align: right; font-weight: bold; }    
-        #data { border-collapse: collapse; }
-        #data td { border: solid 1px; }
-        #data tr:nth-child(even) { background: #CCC; }
-        #data tr:nth-child(1) { font-weight: bold; }
-    </style>    
+        table td { padding-right: 10px; padding-left: 10px; padding-top: 4px; padding-bottom: 4px; font-family:monospace; }
+        table.form { margin: 20px }
+        table.form td.:nth-child(1) { text-align: right; font-weight: bold; }    
+        table.data { border-collapse: collapse; }
+        table.data td { border: solid 1px; }
+        table.data tr:nth-child(even) { background: #CCC; }
+        table.data tr:nth-child(1) { font-weight: bold; }
+        input { font-family:monospace }
+    </style>
     </head>
     <body>
-    <h2>Device Status</h2>""",None) + content + "</tt></body></html>"
+    <h2>Test Status</h2>""",None) + content + "</tt></body></html>"
 
 except:
     print "Content-type: text/plain\n\nAn error has occurred"

@@ -1,56 +1,72 @@
 #!/usr/bin/python
 
+import traceback, re, cgi, sys, psycopg2
+
+# return escape string
+def escape(s):
+    xlat = {'&':'amp', '<':'lt', '>':'gt', '"':'quot', '\'':'#39', '%':'#37'}
+    s = str(s)
+    for x in xlat: s.replace(x,'&%s;'%xlat[x])
+    return s
+
+# return html string with escaped values inserted, redundant whitespace removed
+def html(string, values):
+    if values is not None:
+        string = string % tuple("" if s is None else escape(str(s)) for s in values)
+    return ' '.join(string.split())
+
+# given a dict of "value:name", return a form select 
+def select(name, options, selected):
+    s="<select name='%s'>" % escape(name)
+    for o in options:
+        s += "<option value='%s' %s>%s</option>" % (escape(o),"selected" if o == selected else "",escape(options[o]))
+        s += "</select>"    
+        return s;
+
+# given list of tuples, return a table with a row for each tuple
+def table(htmlclass, rows):
+    s = "<table>"
+    if htmlclass: s = "<table class='%s'>" % (escape(htmlclass),)
+    for row in rows:
+        s += "<tr>"
+        for r in row: s += "<td>%s</td>" % (r,)
+        s += "</tr>"
+    s += "</table>"
+    return s
+
 maxstations=50
 
 try:
-
-    import traceback, re, cgi, sys, psycopg2
-
-    # return html string with escaped values inserted, redundant whitespace removed
-    def html(string, values):
-        if values is not None:
-            string = string % tuple("" if s is None else cgi.escape(str(s),True) for s in values)
-        return ' '.join(string.split())
 
     # return html form with specified defaults
     def makeform(values):
         if not values:
             values=tuple(None for n in range(4+(maxstations*4)))
             
-        return html("""
-            <table>
-                <tr><td>Build ID</td>   <td><input name=buildid type=text value="%s"></td></tr>
-                <tr><td>Allow provisioning?</td> <td><input name=provision type=checkbox value=true %s></td></tr> 
-                <tr><td>Download filename</td>   <td><input name=filename type=text value="%s"></td></tr> 
-                <tr><td>Phase 1 stations</td>     
-                    <td>"""+''.join('<input name=phase1-%d type=text size=3 value="%%s">' % x for x in range(1,maxstations+1))+"""
-                    </td></tr> 
-                <tr><td>Phase 2 stations</td>     
-                    <td>"""+''.join('<input name=phase2-%d type=text size=3 value="%%s">' % x for x in range(1,maxstations+1))+"""
-                    </td></tr> 
-                <tr><td>Phase 3 station</td>     
-                    <td>"""+''.join('<input name=phase3-%d type=text size=3 value="%%s">' % x for x in range(1,maxstations+1))+"""
-                    </td></tr> 
-                <tr><td>Phase 4 stations</td>
-                    <td>"""+''.join('<input name=phase4-%d type=text size=3 value="%%s">' % x for x in range(1,maxstations+1))+"""
-                    </td></tr> 
-                <tr><td>Comment</td>   <td><input name=comment type=text value="%s"></td></tr> 
-            </table>""", values)
+        return html(table("form",[
+            ("Build ID",             "<input name=buildid type=text value='%s'>"),
+            ("Allow provisioning?",  "<input name=provision type=checkbox value=true %s>"),
+            ("Download filename",    "<input name=filename type=text value='%s'>"),
+            ("Phase 1 stations",    ''.join("<input name=phase1-%d type=text size=3 value='%%s'>" % x for x in range(1,maxstations+1))),
+            ("Phase 2 stations",    ''.join("<input name=phase2-%d type=text size=3 value='%%s'>" % x for x in range(1,maxstations+1))),
+            ("Phase 3 stations",    ''.join("<input name=phase3-%d type=text size=3 value='%%s'>" % x for x in range(1,maxstations+1))),
+            ("Phase 4 stations",    ''.join("<input name=phase4-%d type=text size=3 value='%%s'>" % x for x in range(1,maxstations+1))),
+            ("Comment",              "<input name=comment type=text value='%s'>")]), values)
     
     # return list of values created by the above form
     def formvalues(form):
-        return tuple([form.getvalue('buildid'), form.getvalue('provision'), form.getvalue('filename')]+\
-                     [form.getvalue('phase1-%d' % x) for x in range(1,maxstations+1)]+\
-                     [form.getvalue('phase2-%d' % x) for x in range(1,maxstations+1)]+\
-                     [form.getvalue('phase3-%d' % x) for x in range(1,maxstations+1)]+\
-                     [form.getvalue('phase4-%d' % x) for x in range(1,maxstations+1)]+\
-                     [form.getvalue('comment')])
+        return tuple([form.getvalue("buildid"), form.getvalue("provision"), form.getvalue("filename")]+\
+                     [form.getvalue("phase1-%d" % x) for x in range(1,maxstations+1)]+\
+                     [form.getvalue("phase2-%d" % x) for x in range(1,maxstations+1)]+\
+                     [form.getvalue("phase3-%d" % x) for x in range(1,maxstations+1)]+\
+                     [form.getvalue("phase4-%d" % x) for x in range(1,maxstations+1)]+\
+                     [form.getvalue("comment")])
   
     def validate(form):
-        p1=[int(s) for s in (form.getvalue('phase1-%d' % x) for x in range(1,maxstations+1)) if s is not None]
-        p2=[int(s) for s in (form.getvalue('phase2-%d' % x) for x in range(1,maxstations+1)) if s is not None]
-        p3=[int(s) for s in (form.getvalue('phase3-%d' % x) for x in range(1,maxstations+1)) if s is not None]
-        p4=[int(s) for s in (form.getvalue('phase4-%d' % x) for x in range(1,maxstations+1)) if s is not None]
+        p1=[int(s) for s in (form.getvalue("phase1-%d" % x) for x in range(1,maxstations+1)) if s is not None]
+        p2=[int(s) for s in (form.getvalue("phase2-%d" % x) for x in range(1,maxstations+1)) if s is not None]
+        p3=[int(s) for s in (form.getvalue("phase3-%d" % x) for x in range(1,maxstations+1)) if s is not None]
+        p4=[int(s) for s in (form.getvalue("phase4-%d" % x) for x in range(1,maxstations+1)) if s is not None]
         if not len(p1):
             raise Exception("Must specify at least one phase 1 test station")
 
@@ -74,7 +90,7 @@ try:
         if 'action' in form:
             action = form.getvalue('action').split('=',2)
             if action[0] == 'new':
-                content += "<form method=post>" + makeform(None) + """
+                content = "<form method=post>" + makeform(None) + """
                     <hr>
                         <button name=action value=insert>Save</button>
                         <button>Cancel</button>
@@ -84,10 +100,10 @@ try:
             elif action[0] == 'insert':
                 validate(form)
                 cur.execute("insert into builds (buildid, provision, filename,"+\
-                ''.join("phase1[%d]," % x for x in range(1,maxstations+1))+\
-                ''.join("phase2[%d]," % x for x in range(1,maxstations+1))+\
-                ''.join("phase3[%d]," % x for x in range(1,maxstations+1))+\
-                ''.join("phase4[%d]," % x for x in range(1,maxstations+1))+\
+                "".join("phase1[%d]," % x for x in range(1,maxstations+1))+\
+                "".join("phase2[%d]," % x for x in range(1,maxstations+1))+\
+                "".join("phase3[%d]," % x for x in range(1,maxstations+1))+\
+                "".join("phase4[%d]," % x for x in range(1,maxstations+1))+\
                 "comment) values (%s,%s,%s," +\
                           "%s," * maxstations +\
                           "%s," * maxstations +\
@@ -95,50 +111,35 @@ try:
                           "%s," * maxstations +\
                           "%s)", formvalues(form))    
                 conn.commit()
-            elif action[0] == 'del':
-                content += html("""
-                    <table>
-                        <tr><td>Really delete build ID "%s"?</td>
-                            <td>
-                                <form method=post>
-                                    <button name=action value="really=%s">Yes</button>
-                                </form>
-                             </td>
-                             <td>
-                                <form method=post>
-                                    <button>No</button>
-                                </form>
-                            </td>
-                        </tr>
-                    <table>               
-                """, (action[1],action[1]))
+            elif action[0] == "del":
+                content += html(table(None,[("Really delete build ID '%s'?","<form method=post><button name=action value='really=%s'>Yes</button></form>","<form method=post><button>No</button></form>")]),(action[1],action[1]))
                 break
-            elif action[0] == 'really':
-                    cur.execute('delete from builds where buildid=%s', (action[1],));
+            elif action[0] == "really":
+                    cur.execute("delete from builds where buildid=%s", (action[1],));
                     conn.commit()
-            elif action[0] == 'edit':
+            elif action[0] == "edit":
                 cur.execute("select buildid, case when provision then 'checked' else '' end, filename," +\
-                    ''.join("phase1[%d]," % x for x in range(1,maxstations+1)) +\
-                    ''.join("phase2[%d]," % x for x in range(1,maxstations+1)) +\
-                    ''.join("phase3[%d]," % x for x in range(1,maxstations+1)) +\
-                    ''.join("phase4[%d]," % x for x in range(1,maxstations+1)) +\
+                    "".join("phase1[%d]," % x for x in range(1,maxstations+1)) +\
+                    "".join("phase2[%d]," % x for x in range(1,maxstations+1)) +\
+                    "".join("phase3[%d]," % x for x in range(1,maxstations+1)) +\
+                    "".join("phase4[%d]," % x for x in range(1,maxstations+1)) +\
                     "comment from builds where buildid = %s", (action[1],))
                 row = cur.fetchone();
-                content += '<form method=post>' + makeform(row) + html("""
+                content += "<form method=post>" + makeform(row) + html("""
                     <hr>
                     <button name=action value='update=%s'>Update</button>
                     <button>Cancel</button>
                     </form>
                     """,(row[0],))
                 break
-            elif action[0] == 'clone':
+            elif action[0] == "clone":
                 cur.execute("select case when provision then 'checked' else '' end, filename," +\
-                    ''.join("phase1[%d]," % x for x in range(1,maxstations+1)) +\
-                    ''.join("phase2[%d]," % x for x in range(1,maxstations+1)) +\
-                    ''.join("phase3[%d]," % x for x in range(1,maxstations+1)) +\
-                    ''.join("phase4[%d]," % x for x in range(1,maxstations+1)) +\
+                    "".join("phase1[%d]," % x for x in range(1,maxstations+1)) +\
+                    "".join("phase2[%d]," % x for x in range(1,maxstations+1)) +\
+                    "".join("phase3[%d]," % x for x in range(1,maxstations+1)) +\
+                    "".join("phase4[%d]," % x for x in range(1,maxstations+1)) +\
                     "comment from builds where buildid = %s", (action[1],))
-                row = ('',)+cur.fetchone();
+                row = ("",)+cur.fetchone();
                 content += '<form method=post>' + makeform(row) + html("""
                     <hr>
                     <button name=action value='insert'>Save</button>
@@ -149,86 +150,57 @@ try:
             elif action[0] == 'update':
                 validate(form)
                 cur.execute("update builds set buildid=%s, provision=%s, filename=%s," +\
-                    ''.join("phase1[%d]=%%s," % x for x in range(1,maxstations+1)) +\
-                    ''.join("phase2[%d]=%%s," % x for x in range(1,maxstations+1)) +\
-                    ''.join("phase3[%d]=%%s," % x for x in range(1,maxstations+1)) +\
-                    ''.join("phase4[%d]=%%s," % x for x in range(1,maxstations+1)) +\
+                    "".join("phase1[%d]=%%s," % x for x in range(1,maxstations+1)) +\
+                    "".join("phase2[%d]=%%s," % x for x in range(1,maxstations+1)) +\
+                    "".join("phase3[%d]=%%s," % x for x in range(1,maxstations+1)) +\
+                    "".join("phase4[%d]=%%s," % x for x in range(1,maxstations+1)) +\
                     "comment=%s where buildid=%s", formvalues(form)+(action[1],))    
                 conn.commit()
             else:
-                raise Exception('Invalid action = "%s"' % action);
+                raise Exception("Invalid action = '%s'" % action);
     
         # here, generate thge default page contentt
         cur.execute("select buildid, case when provision then 'Yes' else 'No' end, filename,"+\
-            ''.join("phase1[%d]," % x for x in range(1,maxstations+1))+\
-            ''.join("phase2[%d]," % x for x in range(1,maxstations+1))+\
-            ''.join("phase3[%d]," % x for x in range(1,maxstations+1))+\
-            ''.join("phase4[%d]," % x for x in range(1,maxstations+1))+\
+            "".join("phase1[%d]," % x for x in range(1,maxstations+1))+\
+            "".join("phase2[%d]," % x for x in range(1,maxstations+1))+\
+            "".join("phase3[%d]," % x for x in range(1,maxstations+1))+\
+            "".join("phase4[%d]," % x for x in range(1,maxstations+1))+\
             "comment from builds order by buildid")
         if cur.rowcount > 0:
-            content += html("""
-                <table border=1>
-                <tr>
-                    <th>Build ID</th>
-                    <th>Provision?</th>
-                    <th>Filename</th>
-                    <th>Phase 1</th>
-                    <th>Phase 2</th>
-                    <th>Phase 3</th>
-                    <th>Phase 4</th>
-                    <th>Comment</th>
-                    <th>&nbsp;</th>
-                </tr>
-                """,None)
-            for row in cur:
-                content += html("""
-                    <tr><td>%s</td>
-                        <td>%s</td>
-                        <td>%s</td>
-                        """ +\
-                        "<td>" + "%s"*maxstations + "</td>" +\
-                        "<td>" + "%s"*maxstations + "</td>" +\
-                        "<td>" + "%s"*maxstations + "</td>" +\
-                        "<td>" + "%s"*maxstations + "</td>" +\
-                        """
-                        <td>%s</td>
-                        <td>
-                            <form method=post>
-                                <button name=action value='edit=%s'>Edit</button>
-                                <button name=action value='del=%s'>Del</button>
-                                <button name=action value='clone=%s'>Clone</button>
-                            </form>
-                        </td>
-                    </tr>
-                    """, row+(row[0],row[0],row[0]))
-            content += '</table>'
+            rows=cur.fetchall(); # get list of tuples
+            content += html(
+                table("data",
+                    [("Build ID","Provision?","Filename","Phase 1",         "Phase 2",         "Phase 3",        "Phase 4",        "Comment", "&nbsp;")]+
+                    [("%s",     "%s",         "%s",      "%s"*maxstations,  "%s"*maxstations,  "%s"*maxstations, "%s"*maxstations, "%s",    
+                      html("<form method=post><button name=action value='edit=%s'>Edit</button> <button name=action value='del=%s'>Del</button> <button name=action value='clone=%s'>Clone</button></form>",(row[0],row[0],row[0]))) for row in rows]
+                    ),tuple([r for row in rows for r in row]))
         else:
             content += 'No builds defined'
     
-        content += html("""
-            <hr>
-            <form method=post>
-                <button name=action value=new>New build</button>
-            </form>
-            """,None)
+        content += "<hr><form method=post><button name=action value=new>New build</button></form>"
 
     # print generated content
-    print "Content-type: text/html\n\n"+html("""
+    print "Content-type: text/html; charset=utf-8\n\n"+html("""
     <!DOCTYPE html>
     <html>
     <head>
     <title>Build Manager</title>
     <style>
+        table td { padding-right: 10px; padding-left: 10px; padding-top: 4px; padding-bottom: 4px; }
+        table.form { margin: 20px }
+        table.form td.:nth-child(1) { text-align: right; font-weight: bold; }    
+        table.data { border-collapse: collapse; }
+        table.data td { border: solid 1px; }
+        table.data tr:nth-child(even) { background: #CCC; }
+        table.data tr:nth-child(1) { font-weight: bold; }
         input { font-family:monospace }
     </style>    
     </head>
     <body>
-    <tt>
-    <h2>Build Manager</h2>
-    """,None) + content + "</tt></body></html>"
+    <h2>Build Manager</h2>""",None) + content + "</body></html>"
 
 except Exception as e:
-    print "Content-type: text/plain\n\nAn error has occurred"
+    print "Content-type: text/plain; charset=utf-8\n\nAn error has occurred"
     print
     traceback.print_exc(file = sys.stdout)
     print
