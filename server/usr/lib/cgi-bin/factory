@@ -49,12 +49,12 @@ try:
     conn = psycopg2.connect("dbname=factory")
     cur = conn.cursor()
 
-    for l in open("/etc/factory.cfg"):
+    for l in open("/etc/factory/config"):
         k=l.split('=',2)
         if k[0] == "dut_ip":
             dut_ip=k[1].strip()
             break
-    if not dut_ip: raise Exception("Can't find 'dut_ip' in /etc/factory.cfg")
+    if not dut_ip: raise Exception("Can't find 'dut_ip' in /etc/factory/config")
 
     station = None
     try: 

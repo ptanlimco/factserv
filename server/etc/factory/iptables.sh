@@ -3,7 +3,7 @@
 # Edit iptables configure here then run to make permanent
 # We assume that iptables-persistent package is installed
 
-source /etc/factory.cfg
+source /etc/factory/config
 
 # reset
 iptables -F # flush everything
@@ -20,12 +20,14 @@ iptables -A INPUT -i lo -j ACCEPT
 # allow expected
 iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
 
-# http
-iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+# https
 iptables -A INPUT -p tcp --dport 443 -j ACCEPT
 
 # ssh
 iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+
+# http for DUTs
+iptables -A INPUT -i $dut_interface -p tcp --dport 80 -j ACCEPT
 
 # dhcp for the DUTs
 iptables -A INPUT -i $dut_interface -p udp --dport 67 -j ACCEPT
@@ -34,7 +36,7 @@ iptables -A INPUT -i $dut_interface -p udp --dport 67 -j ACCEPT
 iptables -A INPUT -i $dut_interface -p udp --dport 53 -j ACCEPT
 iptables -A INPUT -i $dut_interface -p tcp --dport 53 -j ACCEPT
 
-# NAT forward from dut to factory (comment this out in production?)
+# NAT forward DUTs 
 iptables -t nat -A POSTROUTING -o $factory_interface -j MASQUERADE
 
 # drop all other inputs

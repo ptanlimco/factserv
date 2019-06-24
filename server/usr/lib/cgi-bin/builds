@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+# Configure test station ID vs MAC address and restart dnsmasq.
+
 import traceback, re, cgi, sys, psycopg2
 
 # return escape string

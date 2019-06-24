@@ -1,0 +1,33 @@
+# This is list of files and directories to be installed by install.sh, see that
+# script for details.
+
+root 755 etc/factory
+root 777 etc/factory/authorized_keys
+root 644 etc/factory/config
+root 755 etc/factory/config.dnsmasq
+root 600 etc/factory/insecure_authorized_keys
+root 644 etc/factory/insecure_ssl.key
+root 644 etc/factory/insecure_ssl.pem
+root 755 etc/factory/iptables.sh
+root 644 etc/factory/schema.txt
+root 777 etc/factory/ssl.key
+root 777 etc/factory/ssl.pem
+
+root 644 etc/apache2/apache2.conf !
+root 644 etc/apache2/sites-available/default-ssl.conf !
+
+root 644 etc/issue !
+root 644 etc/network/interfaces.d/factory.conf
+root 644 etc/ssh/ssh_config !
+root 644 etc/ssh/sshd_config !
+root 644 etc/sysctl.d/factory.conf
+
+root 755 usr/lib/cgi-bin !
+root 755 usr/lib/cgi-bin/builds
+root 755 usr/lib/cgi-bin/devices
+root 755 usr/lib/cgi-bin/factory
+root 755 usr/lib/cgi-bin/stations
+root 755 usr/lib/cgi-bin/tests
+
+root 755 var/www/html/downloads
+root 644 var/www/html/index.html

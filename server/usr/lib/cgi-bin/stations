@@ -50,7 +50,7 @@ try:
     import traceback, re, cgi, sys, psycopg2, subprocess
 
     def dnsmasq():
-        p = subprocess.Popen(["sudo","./conf.dnsmasq"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT);
+        p = subprocess.Popen(["sudo","/etc/factory/configure.dnsmasq"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT);
         stdout = p.communicate()[0]
         p.stdout.close()
         status = p.returncode

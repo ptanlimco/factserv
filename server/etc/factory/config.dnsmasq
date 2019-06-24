@@ -10,7 +10,7 @@
 # 
 # Additionally, root must have select privilege on the stations table.
 #
-# Also the file /etc/factory.cfg must exist
+# Also the file /etc/factory/config must exist
 
 me=${0##*/}
 
@@ -18,12 +18,12 @@ die() { echo $me: $* >&2; exit 1; }
 
 ((UID)) && die "must be root"
 
-source /etc/factory.cfg
+source /etc/factory/config
 
 echo "Configuring $dut_interface with ip $dut_ip..."
 
-# this isn the file we will update
-config=/etc/dnsmasq.conf
+# this is the file we will update
+config=/etc/dnsmasq.d/factory.conf
 
 net=${dut_ip%.*}
 
@@ -31,7 +31,7 @@ net=${dut_ip%.*}
     flock -w5 9 || die "failed to acquire lock"
     stations=$(psql -d factory -A -t -F" " -c 'select mac,station from stations order by station') || die 'psql failed'
     md5=$(echo $dut_interface $dut_ip $stations | md5sum | awk '{print $1}') || die 'md5sum failed'
-    if [[ $md5 != $(awk '{print $NF; exit}' $config) ]]; then 
+    if [[ $md5 != $(awk '{print $NF; exit}' $config 2>/dev/null)  ]]; then 
         {
             echo "# this file is auto-generated, do not edit ${md5%% *}"
             echo "interface=$dut_interface"
