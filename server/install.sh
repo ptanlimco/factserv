@@ -1,47 +1,56 @@
 #!/bin/bash -eu
 
-# This script goes at the root of the 'server' directory, look for adjacent
-# 'bom' file which describes files from the 'server' directory to be installed
-# to the root.
+die() { echo $* >&2; exit 1; }
+((!UID)) || die "Must be root"
 
-# Blank lines and # comments in the bomfile are ignored , otherwise each line
-# is in form 'owner perms file [!]'
+(($# == 2)) || die "Usage: $0 factory_interface dut_interface"
 
-# If the fourth token is not '!' then the target file must not exist.
+factory_interface=$1
+[[ -e /sys/class/net/$factory_interface ]] || die "Invalid network interface $factory_interface"
+[[ $(cat /sys/class/net/$factory_interface) == 1 ]] || die "$factory_interface must be connected!"
 
-# If the fourth token is '!' then the target file must exist, and will be overwritten.
+dut_interface=$2
+[[ -e /sys/class/net/$dut_interface ]] || die "Invalid network interface $dut_interface"
+[[ $(cat /sys/class/net/$dut_interface) == 0 ]]  || die "$dut_interface must not be connected!"
 
-# The source file is the copied to the target, and given the specified owner
-# and permissions.
+# install packages
+apt update
+apt upgrade
+apt install apache2 arping curl elinks htop iptables-persistent mlocate
+apt install net-tools postgresql psmisc python-psycogreen sysstat tcpdump
+apt install tmux vim
+apt install --no-install-recommends dnsmasq
 
-# Note new directories must be created before they can be populated. 
+# copy files from directory containing this script to the same paths in the root
+here=${0%/*}
+for file in $(find $here -mindepth 2 \( -type f -o -type l \) -printf "%P\n"); do
+    [[ -d /${file%/*} ]] || mkdir -v -p /${file%/*}
+    cp -v -P -b $here/$file /$file          
+done
 
-# For vi, the preliminary list can created with:
-#
-#   :r!find .  \( -type f -o -type l \) -printf 'root \%m \%P\n'
+# fix factory config
+sed -i "s/FFFF/$factory_interface/g; s/DDDD/$dut_interface/g" /etc/factory/config
 
-# THIS WILL BREAK on filenames that contain spaces... don't do that.
+# configure DUT interface
+sed -i "/DDDD/$dut_interface/g" /etc/network/interfaces.d/factory.conf
+ifup $dut_interface
 
-die() { echo $* > &2; exit 1; }
+# fix factory permissions
+chown -R factory: ~factory/
+chmod -R go= ~factory/.ssh
 
-server=${0%/*}
-[ -f $server/bom || die "Can't find $server/bom"
+# configure postgresql
+su -lc "psql -f /etc/factory/schema.txt" postgrqs
 
-sed 's/#.*//;/\S/!d' $server/bom | while read user perm file flag; do
-    [ -e $server/$file ] || die "Can't find $server/$file"
-    
-    if [ "$flag" == "!" ]; then
-        [ -e /$file ] || die "/$file does not already exist"
-    else
-        [ ! -e /$file ] || die "/$file already exists"
-    fi    
-    
-    # careful, don't dereference symlinks!
-    if [ -d $server/$file ]; then
-        mkdir -p /$file
-    else
-        cp -P $server/$file /$file          
-    fi
-    chown -h $user: /$file                  
-    [ -L /$file ] || chmod $perm /$file
-done    
+# configure Apache
+a2enmod cgi
+a2enmod ssl
+a2ensite default-ssl
+
+# configure iptables
+/etc/factory/iptables.sh
+
+# configure dnsmasq
+/etc/factory/config.dnsmasq
+
+echo "Installation complete"

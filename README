@@ -2,4 +2,4 @@ Factory server configuration and support
 
 server directory contains files to be installed on top of debian 9, see install.txt
 
-client directory contains basic client code, to interact with server and cgi's
+client directory contains basic client code to interact with server and cgi's
