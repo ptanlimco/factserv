@@ -1,5 +1,5 @@
 -- Factory database schema
--- To connect to postgresql: sudo -u postgres psql 
+-- To connect to postgresql: sudo -u postgres psql
 -- Assumes database in a default state: 'drop database factory; drop user factory; drop user "www-data";'
 -- Note hyphenation must be quoted.
 -- This file can be loaded from psql command line with '\i path/to/this/file'
@@ -20,7 +20,7 @@ create table stations (
     mac macaddr unique not null,
     comment varchar	
 );
-grant select, update, insert, delete, trigger on stations to factory; 
+grant select, update, insert, delete, trigger on stations to factory;
 
 -- Info for each supported software build, see builds admin CGI
 -- The build ID must be unique across all platforms
@@ -34,7 +34,7 @@ create table builds (
     phase4 int array,
     comment varchar		
 );
-grant select, update, insert, delete, trigger on builds to factory; 
+grant select, update, insert, delete, trigger on builds to factory;
 
 -- test state, per device, installed by various process CGIs
 create type states as enum('TESTING','FAILED','PASSED','COMPLETE');
@@ -60,7 +60,7 @@ create table provisioned (
     backhauled boolean default false,
     p_mac1 macaddr
 );
-grant select, update, insert, trigger on provisioned to factory; 
+grant select, update, insert, trigger on provisioned to factory;
 
 -- Test results, per test, per device, maintain be various process CGIs
 create table tests (

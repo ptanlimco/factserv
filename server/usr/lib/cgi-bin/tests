@@ -30,7 +30,7 @@ def table(hclass, rows):
 # return html string with escaped values inserted, redundant whitespace removed
 def html(string, values):
     string = ' '.join(string.split())
-    if values is not None: string = string % tuple("" if s is None else escape(s) for s in values)    
+    if values is not None: string = string % tuple("" if s is None else escape(s) for s in values)
     return string
 
 try:

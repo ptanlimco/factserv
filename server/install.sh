@@ -18,7 +18,7 @@ dutip=${3:-172.16.240.254}
 # install packages
 apt update
 apt upgrade
-packages="apache2 arping curl elinks htop iptables-persistent mlocate net-tools postgresql psmisc python-psycogreen sysstat tcpdump tmux vim"
+packages="apache2 arping curl elinks htop iptables-persistent mlocate net-tools postgresql psmisc python-psycogreen smartmontools sudo sysstat tcpdump tmux vim"
 export DEBIAN_FRONTEND=noninteractive
 apt install -y $packages
 # we don't want resolvconf
@@ -28,18 +28,15 @@ apt install -y --no-install-recommends dnsmasq
 here=${0%/*}
 for file in $(find $here -mindepth 2 \( -type f -o -type l \) -printf "%P\n"); do
     [[ -d /${file%/*} ]] || mkdir -v -p /${file%/*}
-    cp -v -P -b $here/$file /$file          
+    cp -v -P -b $here/$file /$file
 done
 
 # patch configuration files
-for f in /etc/factory/config /etc/issue /etc/network/interfaces.d/factory.conf; do
+for f in /etc/factory/config /etc/issue /etc/network/interfaces.d/factory.conf ~factory/.ssh/config; do
     sed -i "s/FACTIF/$factif/g; s/DUTIF/$dutif/g; s/DUTIP/$dutip/g; s/DUTNET/${dutip%.*}.*/g" $f
-done    
-
-# configure 
+done
 
 # fix factory permissions
-sed -i "s/DUTNET/${dutip%.*}.*/g" ~factory/.ssh/config
 chown -R factory: ~factory/
 chmod -R go= ~factory/.ssh
 
@@ -55,6 +52,7 @@ a2ensite default-ssl
 /etc/factory/iptables.sh
 
 # configure dnsmasq
+ifup $dutif
 /etc/factory/update.dnsmasq
 
 # change to UCT

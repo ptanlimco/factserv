@@ -17,12 +17,12 @@ def html(string, values):
         string = string % tuple("" if s is None else escape(str(s)) for s in values)
     return ' '.join(string.split())
 
-# given a dict of "value:name", return a form select 
+# given a dict of "value:name", return a form select
 def select(name, options, selected):
     s="<select name='%s'>" % escape(name)
     for o in options:
         s += "<option value='%s' %s>%s</option>" % (escape(o),"selected" if o == selected else "",escape(options[o]))
-        s += "</select>"    
+        s += "</select>"
         return s;
 
 # given list of tuples, return a table with a row for each tuple
@@ -44,7 +44,7 @@ try:
     def makeform(values):
         if not values:
             values=tuple(None for n in range(4+(maxstations*4)))
-            
+
         return html(table("form",[
             ("Build ID",             "<input name=buildid type=text value='%s'>"),
             ("Allow provisioning?",  "<input name=provision type=checkbox value=true %s>"),
@@ -54,7 +54,7 @@ try:
             ("Phase 3 stations",    ''.join("<input name=phase3-%d type=text size=3 value='%%s'>" % x for x in range(1,maxstations+1))),
             ("Phase 4 stations",    ''.join("<input name=phase4-%d type=text size=3 value='%%s'>" % x for x in range(1,maxstations+1))),
             ("Comment",              "<input name=comment type=text value='%s'>")]), values)
-    
+
     # return list of values created by the above form
     def formvalues(form):
         return tuple([form.getvalue("buildid"), form.getvalue("provision"), form.getvalue("filename")]+\
@@ -63,7 +63,7 @@ try:
                      [form.getvalue("phase3-%d" % x) for x in range(1,maxstations+1)]+\
                      [form.getvalue("phase4-%d" % x) for x in range(1,maxstations+1)]+\
                      [form.getvalue("comment")])
-  
+
     def validate(form):
         p1=[int(s) for s in (form.getvalue("phase1-%d" % x) for x in range(1,maxstations+1)) if s is not None]
         p2=[int(s) for s in (form.getvalue("phase2-%d" % x) for x in range(1,maxstations+1)) if s is not None]
@@ -86,7 +86,7 @@ try:
     cur=conn.cursor()
     form=cgi.FieldStorage();
     content=""
-   
+
     # single-pass loop so break will work
     for _ in (True,):
         if 'action' in form:
@@ -111,7 +111,7 @@ try:
                           "%s," * maxstations +\
                           "%s," * maxstations +\
                           "%s," * maxstations +\
-                          "%s)", formvalues(form))    
+                          "%s)", formvalues(form))
                 conn.commit()
             elif action[0] == "del":
                 content += html(table(None,[("Really delete build ID '%s'?","<form method=post><button name=action value='really=%s'>Yes</button></form>","<form method=post><button>No</button></form>")]),(action[1],action[1]))
@@ -156,11 +156,11 @@ try:
                     "".join("phase2[%d]=%%s," % x for x in range(1,maxstations+1)) +\
                     "".join("phase3[%d]=%%s," % x for x in range(1,maxstations+1)) +\
                     "".join("phase4[%d]=%%s," % x for x in range(1,maxstations+1)) +\
-                    "comment=%s where buildid=%s", formvalues(form)+(action[1],))    
+                    "comment=%s where buildid=%s", formvalues(form)+(action[1],))
                 conn.commit()
             else:
                 raise Exception("Invalid action = '%s'" % action);
-    
+
         # here, generate thge default page contentt
         cur.execute("select buildid, case when provision then 'Yes' else 'No' end, filename,"+\
             "".join("phase1[%d]," % x for x in range(1,maxstations+1))+\
@@ -173,12 +173,12 @@ try:
             content += html(
                 table("data",
                     [("Build ID","Provision?","Filename","Phase 1",         "Phase 2",         "Phase 3",        "Phase 4",        "Comment", "&nbsp;")]+
-                    [("%s",     "%s",         "%s",      "%s"*maxstations,  "%s"*maxstations,  "%s"*maxstations, "%s"*maxstations, "%s",    
+                    [("%s",     "%s",         "%s",      "%s"*maxstations,  "%s"*maxstations,  "%s"*maxstations, "%s"*maxstations, "%s",
                       html("<form method=post><button name=action value='edit=%s'>Edit</button> <button name=action value='del=%s'>Del</button> <button name=action value='clone=%s'>Clone</button></form>",(row[0],row[0],row[0]))) for row in rows]
                     ),tuple([r for row in rows for r in row]))
         else:
             content += 'No builds defined'
-    
+
         content += "<hr><form method=post><button name=action value=new>New build</button></form>"
 
     # print generated content
@@ -190,13 +190,13 @@ try:
     <style>
         table td { padding-right: 10px; padding-left: 10px; padding-top: 4px; padding-bottom: 4px; }
         table.form { margin: 20px }
-        table.form td.:nth-child(1) { text-align: right; font-weight: bold; }    
+        table.form td.:nth-child(1) { text-align: right; font-weight: bold; }
         table.data { border-collapse: collapse; }
         table.data td { border: solid 1px; }
         table.data tr:nth-child(even) { background: #CCC; }
         table.data tr:nth-child(1) { font-weight: bold; }
         input { font-family:monospace }
-    </style>    
+    </style>
     </head>
     <body>
     <h2>Build Manager</h2>""",None) + content + "</body></html>"

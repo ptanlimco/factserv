@@ -1,0 +1,3 @@
+# Allow update.dnsmasq without password
+www-data ALL=(ALL) NOPASSWD: /etc/factory/update.dnsmasq
+factory ALL=(ALL) NOPASSWD: /etc/factory/update.dnsmasq

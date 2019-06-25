@@ -32,7 +32,7 @@
 #    service=enddiag&deviceid=X - finish current test session, device is moved
 #    to PASSED or COMPLETED state. Returns "state phase".
 
-# Any server error result in a 4XX response which DUT must treat as fatal.  
+# Any server error result in a 4XX response which DUT must treat as fatal.
 
 # prefix of test stations attached to this server, this can change
 
@@ -42,7 +42,7 @@ try:
 
     sys.stderr = sys.stdout
     # print "Content-type: text/plain\n" # enable for debug only
-    
+
     me = sys.argv[0].split("/")[-1]
     form = cgi.FieldStorage()
 
@@ -57,19 +57,19 @@ try:
     if not dut_ip: raise Exception("Can't find 'dut_ip' in /etc/factory/config")
 
     station = None
-    try: 
+    try:
         remote = os.environ["REMOTE_ADDR"]
     except:
         remote="127.0.0.1"
 
-    if remote == "127.0.0.1" or remote == dut_ip: 
+    if remote == "127.0.0.1" or remote == dut_ip:
         station = 0
     else:
         prefix=".".join(k[1].split(".")[0:3])+"."
-        if not remote.startswith(prefix): raise Exception("Request from IP %s is not allowed (expecting prefix %s)" % (remote,prefix)) 
-        station = remote.split(".")[3] 
+        if not remote.startswith(prefix): raise Exception("Request from IP %s is not allowed (expecting prefix %s)" % (remote,prefix))
+        station = remote.split(".")[3]
         cur.execute("select 1 from stations where station=%s", (station,))
-        if not cur.rowcount: raise Exception("Request from IP %s is not allowed (unknown test station)" % (remote,))    
+        if not cur.rowcount: raise Exception("Request from IP %s is not allowed (unknown test station)" % (remote,))
 
     service = form.getvalue("service")
     if not service: service = me # maybe the script name is a symlink
@@ -83,7 +83,7 @@ try:
     # vaildate buildid, return dict containing the builds table row
     def checkbuild(buildid):
         cur.execute("select filename, provision, %s=any(phase1), %s=any(phase2), %s=any(phase3), %s=any(phase4) from builds where buildid=%s", (station, station, station, station, buildid))
-        if not cur.rowcount: raise Exception("Invalid buildid '%s'" % (buildid,))    
+        if not cur.rowcount: raise Exception("Invalid buildid '%s'" % (buildid,))
         build={}
         build["filename"],build["provision"],build["phase1"],build["phase2"],build["phase3"],build["phase4"]=cur.fetchone();
         if not (build["phase1"] or build["phase2"] or build["phase3"] or build["phase4"]): raise Exception("Buildid %s not enabled for station %s" % (value, station))
@@ -102,12 +102,12 @@ try:
         build = checkbuild(buildid)
         if not build["provision"]: raise Exception("Provisioning disabled for buildid %s" % (buildid,))
         if not build["phase1"]: raise Exception("Phase1 is disallowed for buildid %s on station %s" % (buildid,station))
-        
+
         deviceid = form.getvalue("deviceid")
         if deviceid:
             # if deviceid is given, (re)init the device table for phase1
             cur.execute("insert into devices (deviceid, buildid, station) values (%s, %s, %s) on conflict(deviceid) do update set buildid=%s, station=%s, state='TESTING', phase=1",
-                        (deviceid, buildid, station, buildid, station));  
+                        (deviceid, buildid, station, buildid, station));
             conn.commit()
         ok=""
 
@@ -117,15 +117,15 @@ try:
         build = checkbuild(buildid)
 
         cur.execute("select state, phase from devices where deviceid=%s", (deviceid,))
-        if not cur.rowcount: 
+        if not cur.rowcount:
             if not build["phase1"]: raise Exception("Can't perform phase 1 for buildid %s on station %s" % (buildid,station))
             cur.execute("insert into devices (state, phase, station, buildid, deviceid) values ('TESTING', 1, %s, %s, %s)", (station, buildid, deviceid))
             phase=1
-        else:    
+        else:
             state, phase = cur.fetchone()
             if state == "COMPLETE": phase = 4
             elif state == "PASSED": phase += 1
-            p = phase    
+            p = phase
             # regress phase until we find one that's allowed on this station
             if phase == 4 and not build["phase4"]: phase = 3
             if phase == 3 and not build["phase3"]: phase = 2
@@ -166,12 +166,12 @@ try:
 
     elif service == "enddiag":
         deviceid = require("deviceid")
-        
+
         cur.execute("select state, phase, buildid from devices where deviceid=%s", (deviceid,))
         if not cur.rowcount: raise Exception("No record for deviceid %s" % (deviceid,))
         state, phase, buildid = cur.fetchone()
         if state != "TESTING": raise Exception("Expected deviceid %s state TESTING, actual state is %s" % (deviceid, state))
-        
+
         build = checkbuild(buildid)
         if (phase==1 and build["phase2"]) or (phase==2 and build["phase3"]) or (phase==3 and build["phase4"]):
             state="PASSED" # prepare for next phase
@@ -197,12 +197,12 @@ try:
         key="p_"+key
         cur.execute("select %s from provisioned where deviceid = %%s" % (key,),(deviceid,))
         ok = cur.fetchone()[0]
-    
+
     else:
         raise Exception("Invalid service '%s'" % (service,))
 
     # print the result in 'ok'
-    print "Content-type: text/plain\n\n%s" % ok   
+    print "Content-type: text/plain\n\n%s" % ok
 
 except Exception:
     t,v,tb=sys.exc_info();

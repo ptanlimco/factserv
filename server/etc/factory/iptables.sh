@@ -36,7 +36,7 @@ iptables -A INPUT -i $dut_interface -p udp --dport 67 -j ACCEPT
 iptables -A INPUT -i $dut_interface -p udp --dport 53 -j ACCEPT
 iptables -A INPUT -i $dut_interface -p tcp --dport 53 -j ACCEPT
 
-# NAT forward DUTs 
+# NAT forward DUTs
 iptables -t nat -A POSTROUTING -o $factory_interface -j MASQUERADE
 
 # drop all other inputs

@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-class BadSubmit(Exception): pass 
+class BadSubmit(Exception): pass
 
 def escape(s):
     xlat = {'&':'amp', '<':'lt', '>':'gt', '"':'quot', '\'':'#39', '%':'#37'}
@@ -12,7 +12,7 @@ def select(name, options, selected):
     s="<select name='%s'>" % escape(name)
     for o in options:
         s += "<option value='%s' %s>%s</option>" % (escape(o),"selected" if o == selected else "",escape(options[o]))
-    s += "</select>"    
+    s += "</select>"
     return s;
 
 def table(hclass, rows):
@@ -38,7 +38,7 @@ try:
     conn=psycopg2.connect('dbname=factory')
     cur=conn.cursor()
     form=cgi.FieldStorage();
-    
+
     deviceid_types={"=":"is","!=":"is not","like":"is like","not like":"is not like"}
     buildid_types={"=":"is","!=":"is not","like":"is like","not like":"is not like"}
     created_types={"=":"is","!=":"is not","<":"is before",">":"is after"}
@@ -46,7 +46,7 @@ try:
     state_types={"=":"is","!=":"is not"}
     phase_types={"=":"is","!=":"is not"}
     station_types={"=":"is","!=":"is not"}
-    # get possible test states 
+    # get possible test states
     cur.execute("select unnest(enum_range(NULL::states))")
     states=[r[0] for r in cur.fetchall()]
 
@@ -69,7 +69,7 @@ try:
         station_type=form.getvalue('station_type')
 
     else:
-        
+
         deviceid=None
         deviceid_type=None
         buildid=None
@@ -85,12 +85,12 @@ try:
         station=None
         station_type=None
 
-        
+
     if state:
         state=state.upper()
         if state not in states: raise BadSubmit("Invalid state %s" % state)
 
-    content="<form method=post>" + table("form", 
+    content="<form method=post>" + table("form",
     [
         ["Device ID", select("deviceid_type",deviceid_types, deviceid_type or "="),  html("<input type=text name=deviceid value='%s'>",(deviceid,))],
         ["Build ID",  select("buildid_type", buildid_types, buildid_type or "="),    html("<input type=text name=buildid value='%s'>",(buildid,))],
@@ -110,11 +110,11 @@ try:
     if buildid:
         if buildid_type not in buildid_types: raise BadSubmit("Invalid buildid_type %s" % (buildid_type,))
         where += [cur.mogrify("buildid %s %%s" % (buildid_type,) ,(buildid,))]
-    
+
     if created:
         if created_type not in created_types: raise BadSubmit("Invalid created_type %s" % (created_type,))
         where += [cur.mogrify("created %s %%s" % (created_type,) ,(created,))]
-    
+
     if updated:
         if updated_type not in updated_types: raise BadSubmit("Invalid updated_type %s" % (updated_type,))
         where += [cur.mogrify("updated %s %%s" % (updated_type,) ,(updated,))]
@@ -126,7 +126,7 @@ try:
     if phase:
         if phase_type not in phase_types: raise BadSubmit("Invalid phase_type %s" % (phase_type,))
         where += [cur.mogrify("phase %s %%s" % (phase_type,) ,(phase,))]
-    
+
     if station:
         if station_type not in station_types: raise BadSubmit("Invalid station_type %s" % (station_type,))
         where += [cur.mogrify("station %s %%s" % (station_type,) ,(station,))]
@@ -148,13 +148,13 @@ try:
     <style>
         table td { padding-right: 10px; padding-left: 10px; padding-top: 4px; padding-bottom: 4px; }
         table.form { margin: 20px }
-        table.form td.:nth-child(1) { text-align: right; font-weight: bold; }    
+        table.form td.:nth-child(1) { text-align: right; font-weight: bold; }
         table.data { border-collapse: collapse; }
         table.data td { border: solid 1px; }
         table.data tr:nth-child(even) { background: #CCC; }
         table.data tr:nth-child(1) { font-weight: bold; }
         input { font-family:monospace }
-    </style>    
+    </style>
     </head>
     <body>
     <h2>Device Status</h2>""",None) + content + "</tt></body></html>"
