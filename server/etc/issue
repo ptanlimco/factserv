@@ -1,5 +1,5 @@
 Property of BYTON GmbH
 Unauthorized access prohibited
 \d \t
-XXXX is \4{XXXX}
-
+Factory interface: FACTIF, address \4{FACTIF}
+DUT interface    : DUTIF, address \4{DUTIF}

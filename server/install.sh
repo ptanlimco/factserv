@@ -3,23 +3,24 @@
 die() { echo $* >&2; exit 1; }
 ((!UID)) || die "Must be root"
 
-(($# == 2)) || die "Usage: $0 factory_interface dut_interface"
+(($# >= 2)) || die "Usage: $0 factory_interface dut_interface [dut_ip]"
 
-factory_interface=$1
-[[ -e /sys/class/net/$factory_interface ]] || die "Invalid network interface $factory_interface"
-[[ $(cat /sys/class/net/$factory_interface) == 1 ]] || die "$factory_interface must be connected!"
+factif=$1
+[[ -e /sys/class/net/$factif ]] || die "Invalid network interface $factif"
+(($(cat /sys/class/net/$factif/carrier 2>/dev/null))) || die "$factif must be connected!"
 
-dut_interface=$2
-[[ -e /sys/class/net/$dut_interface ]] || die "Invalid network interface $dut_interface"
-[[ $(cat /sys/class/net/$dut_interface) == 0 ]]  || die "$dut_interface must not be connected!"
+dutif=$2
+[[ -e /sys/class/net/$dutif ]] || die "Invalid network interface $dutif"
+! (($(cat /sys/class/net/$dutif/carrier 2>/dev/null))) || die "$dutif must not be connected!"
+
+dutip=${3:-172.16.240.254}
 
 # install packages
 apt update
 apt upgrade
-apt install apache2 arping curl elinks htop iptables-persistent mlocate
-apt install net-tools postgresql psmisc python-psycogreen sysstat tcpdump
-apt install tmux vim
-apt install --no-install-recommends dnsmasq
+packages="apache2 arping curl elinks htop iptables-persistent mlocate net-tools postgresql psmisc python-psycogreen sysstat tcpdump tmux vim"
+apt install --yes --force-yes $packages
+apt install --yes --force-yes --no-install-recommends dnsmasq
 
 # copy files from directory containing this script to the same paths in the root
 here=${0%/*}
@@ -28,19 +29,20 @@ for file in $(find $here -mindepth 2 \( -type f -o -type l \) -printf "%P\n"); d
     cp -v -P -b $here/$file /$file          
 done
 
-# fix factory config
-sed -i "s/FFFF/$factory_interface/g; s/DDDD/$dut_interface/g" /etc/factory/config
+# patch configuration files
+for f in /etc/factory/config /etc/issue /etc/network/interfaces.d/factory.conf; do
+    sed -i "s/FACTIF/$factif/g; s/DUTIF/$dutif/g; s/DUTIP/$dutip/g; s/DUTNET/${dutip%.*}.*/g" $f
+done    
 
-# configure DUT interface
-sed -i "/DDDD/$dut_interface/g" /etc/network/interfaces.d/factory.conf
-ifup $dut_interface
+# configure 
 
 # fix factory permissions
+sed -i "s/DUTNET/${dutip%.*}.*/g" ~factory/.ssh/config
 chown -R factory: ~factory/
 chmod -R go= ~factory/.ssh
 
 # configure postgresql
-su -lc "psql -f /etc/factory/schema.txt" postgrqs
+su -lc "psql -f /etc/factory/schema.txt" postgres
 
 # configure Apache
 a2enmod cgi
@@ -51,6 +53,10 @@ a2ensite default-ssl
 /etc/factory/iptables.sh
 
 # configure dnsmasq
-/etc/factory/config.dnsmasq
+/etc/factory/update.dnsmasq
 
-echo "Installation complete"
+# change to UCT
+ln -sf /usr/share/zoneinfo/UCT /etc/localtime
+
+echo "######################"
+echo "Installation complete!"

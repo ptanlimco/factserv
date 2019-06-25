@@ -1,5 +1,5 @@
 # Sourced by various factory scripts to obtain default values
-factory_interface=FFFF
-dut_interface=DDDD
-dut_ip=192.168.137.254
+factory_interface=FACTIF
+dut_interface=DUTIF
+dut_ip=DUTIP
 dut_subnet=255.255.255.0

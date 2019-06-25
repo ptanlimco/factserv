@@ -50,13 +50,13 @@ try:
     import traceback, re, cgi, sys, psycopg2, subprocess
 
     def dnsmasq():
-        p = subprocess.Popen(["sudo","/etc/factory/configure.dnsmasq"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT);
+        p = subprocess.Popen(["sudo","/etc/factory/update.dnsmasq"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT);
         stdout = p.communicate()[0]
         p.stdout.close()
         status = p.returncode
 
         if not stdout:
-            stdout="conf.dnsmasq unknown failure"
+            stdout="update.dnsmasq unknown failure"
         if status:
             raise Exception("%s (%d)" % (stdout.split("\n")[0], status))
 
