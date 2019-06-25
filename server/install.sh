@@ -19,8 +19,10 @@ dutip=${3:-172.16.240.254}
 apt update
 apt upgrade
 packages="apache2 arping curl elinks htop iptables-persistent mlocate net-tools postgresql psmisc python-psycogreen sysstat tcpdump tmux vim"
-apt install --yes --force-yes $packages
-apt install --yes --force-yes --no-install-recommends dnsmasq
+export DEBIAN_FRONTEND=noninteractive
+apt install -y $packages
+# we don't want resolvconf
+apt install -y --no-install-recommends dnsmasq
 
 # copy files from directory containing this script to the same paths in the root
 here=${0%/*}
