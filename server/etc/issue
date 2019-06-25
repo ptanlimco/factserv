@@ -2,5 +2,5 @@ Property of BYTON GmbH
 Unauthorized access prohibited
 \d \t
 FACTIF address is \4{FACTIF} (factory interface)
-DUTIF address \4{DUTIF} (DUT interface)
+DUTIF address is \4{DUTIF} (DUT interface)
 
