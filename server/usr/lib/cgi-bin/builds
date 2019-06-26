@@ -1,8 +1,8 @@
-#!/usr/bin/python
+#!/usr/bin/python2
 
 # Configure test station ID vs MAC address and restart dnsmasq.
 
-import traceback, re, cgi, sys, psycopg2
+import traceback, re, cgi, sys, psycopg2, os, base64
 
 # return escape string
 def escape(s):
@@ -37,6 +37,14 @@ def table(htmlclass, rows):
     return s
 
 maxstations=50
+
+# require supervisor password
+try:
+    if base64.decodestring(os.environ["HTTP_AUTHORIZATION"].split()[1]) != "supervisor:superx5"
+        raise Exception
+
+except:
+    print 'Content-type: text/plain\nStatus: 401 Unauthorized\nWWW-Authenticate: basic realm="Supervisor"\n'
 
 try:
 

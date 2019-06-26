@@ -1,4 +1,7 @@
-#!/usr/bin/python
+#!/usr/bin/python2
+
+import traceback, re, cgi, sys, psycopg2, os, base64
+from urllib import urlencode
 
 class BadSubmit(Exception): pass
 
@@ -33,10 +36,14 @@ def html(string, values):
     if values is not None: string = string % tuple("" if s is None else escape(s) for s in values)
     return string
 
+# require technician password
 try:
-    import traceback, re, cgi, sys, psycopg2
-    from urllib import urlencode
+    if base64.decodestring(os.environ["HTTP_AUTHORIZATION"].split()[1]) != "techx4"
+        raise Exception
+except:
+    print 'Content-type: text/plain\nStatus: 401 Unauthorized\nWWW-Authenticate: basic realm="Technician"\n'
 
+try:
     conn=psycopg2.connect('dbname=factory')
     cur=conn.cursor()
     form=cgi.FieldStorage();

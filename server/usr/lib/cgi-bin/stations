@@ -1,4 +1,6 @@
-#!/usr/bin/python
+#!/usr/bin/python2
+
+import traceback, re, cgi, sys, psycopg2, subprocess, os, base64
 
 class BadSubmit(Exception): pass
 
@@ -37,7 +39,7 @@ def makeform(values):
     else:
         values+=("update %s" % escape(values[0]),"Update")
     return html("<form method=post>"+table("form",[
-           ("Station IP",  "<input name=station type=text value='%s'>"),
+           ("Station ID",  "<input name=station type=text value='%s'>"),
            ("Station MAC", "<input name=mac type=text value='%s'>"),
            ("Comment",     "<input name=comment type=text value='%s'>")
         ])+"""
@@ -46,8 +48,15 @@ def makeform(values):
         </form>
         """,values)
 
+# require supervisor password
 try:
-    import traceback, re, cgi, sys, psycopg2, subprocess
+    if base64.decodestring(os.environ["HTTP_AUTHORIZATION"].split()[1]) != "supervisor:superx5"
+        raise Exception
+
+except:
+    print 'Content-type: text/plain\nStatus: 401 Unauthorized\nWWW-Authenticate: basic realm="Supervisor"\n'
+
+try:
 
     def dnsmasq():
         p = subprocess.Popen(["sudo","/etc/factory/update.dnsmasq"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT);
