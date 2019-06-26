@@ -39,6 +39,8 @@ done
 # fix factory permissions
 chown -R factory: ~factory/
 chmod -R go= ~factory/.ssh
+chown root:factory /var/www/html/downloads
+chmod 775 /var/www/html/downloads
 
 # configure postgresql
 su -lc "psql -f /etc/factory/schema.txt" postgres

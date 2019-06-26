@@ -50,11 +50,12 @@ def makeform(values):
 
 # require supervisor password
 try:
-    if base64.decodestring(os.environ["HTTP_AUTHORIZATION"].split()[1]) != "supervisor:superx5"
+    if base64.decodestring(os.environ["HTTP_AUTHORIZATION"].split()[1]) != "supervisor:superx5":
         raise Exception
 
 except:
     print 'Content-type: text/plain\nStatus: 401 Unauthorized\nWWW-Authenticate: basic realm="Supervisor"\n'
+    sys,exit(0)
 
 try:
 
