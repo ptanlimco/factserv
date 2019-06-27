@@ -18,11 +18,8 @@ dutip=${3:-172.16.240.254}
 # install packages
 apt update
 apt upgrade
-packages="apache2 arping curl elinks htop iptables-persistent mlocate net-tools postgresql psmisc python-psycogreen smartmontools sudo sysstat tcpdump tmux vim"
 export DEBIAN_FRONTEND=noninteractive
-apt install -y $packages
-# we don't want resolvconf
-apt install -y --no-install-recommends dnsmasq
+apt install -y apache2 arping curl dnsmasq elinks htop iptables-persistent mlocate net-tools postgresql psmisc python-psycogreen smartmontools sudo sysstat tcpdump tmux vim
 
 # copy files from directory containing this script to the same paths in the root
 here=${0%/*}
@@ -32,7 +29,7 @@ for file in $(find $here -mindepth 2 \( -type f -o -type l \) -printf "%P\n"); d
 done
 
 # patch configuration files
-for f in /etc/factory/config /etc/issue /etc/network/interfaces.d/factory.conf ~factory/.ssh/config; do
+for f in /etc/factory/config /etc/issue /etc/network/interfaces.d/factory.conf /etc/ssh/ssh_config; do
     sed -i "s/FACTIF/$factif/g; s/DUTIF/$dutif/g; s/DUTIP/$dutip/g; s/DUTNET/${dutip%.*}.*/g" $f
 done
 
