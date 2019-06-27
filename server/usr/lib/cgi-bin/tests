@@ -42,7 +42,7 @@ try:
         raise Exception
 except:
     print 'Content-type: text/plain\nStatus: 401 Unauthorized\nWWW-Authenticate: basic realm="Technician"\n'
-    sys,exit(0)
+    sys.exit(0)
 
 try:
     conn=psycopg2.connect('dbname=factory')

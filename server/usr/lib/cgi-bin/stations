@@ -55,7 +55,7 @@ try:
 
 except:
     print 'Content-type: text/plain\nStatus: 401 Unauthorized\nWWW-Authenticate: basic realm="Supervisor"\n'
-    sys,exit(0)
+    sys.exit(0)
 
 try:
 
