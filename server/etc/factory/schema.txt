@@ -18,7 +18,8 @@ create or replace function uct() returns timestamp as $$ select now() at time zo
 create table stations (
     station int primary key check (station > 0 and station <= 200),
     mac macaddr unique not null,
-    comment varchar	
+    fixture varchar,
+    comment varchar
 );
 grant select, update, insert, delete, trigger on stations to factory;
 

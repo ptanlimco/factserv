@@ -15,7 +15,7 @@ def select(name, options, selected):
     for o in options:
         s += "<option value='%s' %s>%s</option>" % (escape(o),"selected" if o == selected else "",escape(options[o]))
     s += "</select>"
-    return s;
+    return s
 
 def table(hclass, rows):
     s = "<table>"
@@ -35,12 +35,13 @@ def html(string, values):
 
 def makeform(values):
     if not values:
-        values=("","","","insert","Save")
+        values=("","","","","insert","Save")
     else:
         values+=("update %s" % escape(values[0]),"Update")
     return html("<form method=post>"+table("form",[
            ("Station ID",  "<input name=station type=text value='%s'>"),
            ("Station MAC", "<input name=mac type=text value='%s'>"),
+           ("Fixture",     "<input name=fixture type=text value='%s'>"),
            ("Comment",     "<input name=comment type=text value='%s'>")
         ])+"""
         <button name=action value='%s'>%s</button>
@@ -60,7 +61,7 @@ except:
 try:
 
     def dnsmasq():
-        p = subprocess.Popen(["sudo","/etc/factory/update.dnsmasq"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT);
+        p = subprocess.Popen(["sudo","/etc/factory/update.dnsmasq"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         stdout = p.communicate()[0]
         p.stdout.close()
         status = p.returncode
@@ -72,48 +73,48 @@ try:
 
     conn=psycopg2.connect('dbname=factory')
     cur=conn.cursor()
-    form=cgi.FieldStorage();
+    form=cgi.FieldStorage()
     content=""
 
     for _ in (True,):
         if 'action' in form:
-            action = form.getvalue('action').split(' ');
+            action = form.getvalue('action').split(' ')
             if action[0] == 'new':
                 content = makeform(None)
                 break
             elif action[0] == 'insert':
-                    cur.execute('insert into stations (station,mac,comment) values(%s,%s,%s)',
-                        (form.getvalue('station'),form.getvalue('mac'),form.getvalue('comment')))
+                    cur.execute('insert into stations (station,mac,fixture,comment) values(%s,%s,%s,%s)',
+                        (form.getvalue('station'),form.getvalue('mac'),form.getvalue('fixture'),form.getvalue('comment')))
                     conn.commit()
                     dnsmasq()
             elif action[0] == 'del':
                 content = html(table(None,[("Really delete station %s?","<form method=post><button name=action value='really %s'>Yes</button></form>","<form method=post><button>No</button></form>")]), (action[1],action[1]))
                 break
             elif action[0] == 'really':
-                    cur.execute('delete from stations where station=%s', (action[1],));
+                    cur.execute('delete from stations where station=%s', (action[1],))
                     conn.commit()
                     dnsmasq()
             elif action[0] == 'edit':
-                cur.execute("select station, mac, comment from stations where station = %s", (action[1],));
+                cur.execute("select station, mac, fixture, comment from stations where station = %s", (action[1],))
                 content = makeform(cur.fetchone())
                 break
             elif action[0] == 'update':
-                cur.execute('update stations set station=%s, mac=%s, comment=%s where station=%s',
-                    (form.getvalue('station'),form.getvalue('mac'),form.getvalue('comment'),action[1]))
+                cur.execute('update stations set station=%s, mac=%s, fixture=%s, comment=%s where station=%s',
+                    (form.getvalue('station'),form.getvalue('mac'),form.getvalue('fixture'),form.getvalue('comment'),action[1]))
                 conn.commit()
                 dnsmasq()
             else:
-                raise BadSubmit('Invalid action = "%s"' % action);
+                raise BadSubmit('Invalid action = "%s"' % action)
 
-        cur.execute('select station,mac,comment from stations order by station')
+        cur.execute('select station,mac,fixture,comment from stations order by station')
 
         if not cur.rowcount:
             content = "No stations!"
         else:
             rows=cur.fetchall()
             content = html(table("data",
-                [("Station","MAC","Comment","&nbsp;")] +
-                [("%s",    "%s", "%s",       html("<form method=post> <button name=action value='edit %s'>Edit</button> <button name=action value='del %s'>Del</button> </form>",(row[0],row[0]))) for row in rows]
+                [("Station","MAC","Fixture","Comment","&nbsp;")] +
+                [("%s",     "%s", "%s",     "%s",      html("<form method=post> <button name=action value='edit %s'>Edit</button> <button name=action value='del %s'>Del</button> </form>",(row[0],row[0]))) for row in rows]
                ),tuple([r for row in rows for r in row]))
 
         content += "<hr><form method=post><button name=action value=new>New station</button></form>"

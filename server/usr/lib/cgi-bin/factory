@@ -64,12 +64,14 @@ try:
 
     if remote == "127.0.0.1" or remote == dut_ip:
         station = 0
+        fixture = ""
     else:
         prefix=".".join(k[1].split(".")[0:3])+"."
         if not remote.startswith(prefix): raise Exception("Request from IP %s is not allowed (expecting prefix %s)" % (remote,prefix))
         station = remote.split(".")[3]
-        cur.execute("select 1 from stations where station=%s", (station,))
+        cur.execute("select fixture from stations where station=%s", (station,))
         if not cur.rowcount: raise Exception("Request from IP %s is not allowed (unknown test station)" % (remote,))
+        fixture = cur.fetchone()[0]
 
     service = form.getvalue("service")
     if not service: service = me # maybe the script name is a symlink
@@ -85,7 +87,7 @@ try:
         cur.execute("select filename, provision, %s=any(phase1), %s=any(phase2), %s=any(phase3), %s=any(phase4) from builds where buildid=%s", (station, station, station, station, buildid))
         if not cur.rowcount: raise Exception("Invalid buildid '%s'" % (buildid,))
         build={}
-        build["filename"],build["provision"],build["phase1"],build["phase2"],build["phase3"],build["phase4"]=cur.fetchone();
+        build["filename"],build["provision"],build["phase1"],build["phase2"],build["phase3"],build["phase4"]=cur.fetchone()
         if not (build["phase1"] or build["phase2"] or build["phase3"] or build["phase4"]): raise Exception("Buildid %s not enabled for station %s" % (value, station))
         return build
 
@@ -93,8 +95,11 @@ try:
 
     if service == "download":
         buildid = require("buildid")
-        build = checkbuild(buildid)
-        print "Location: /download/%s\n" % (build["filename"],) # This actually redirects Apache, the client won't see it
+        if buildid == ":fixture:":                                      # request from test fixture
+            print "Location: /download/fixture.tar.gz\n"                # redirect to the fixture tarball 
+        else:    
+            build = checkbuild(buildid)                                 # validate build
+            print "Location: /download/%s\n" % (build["filename"],)     # redirect to the build tarball
         quit()
 
     elif service == "newdevice":
@@ -107,7 +112,7 @@ try:
         if deviceid:
             # if deviceid is given, (re)init the device table for phase1
             cur.execute("insert into devices (deviceid, buildid, station) values (%s, %s, %s) on conflict(deviceid) do update set buildid=%s, station=%s, state='TESTING', phase=1",
-                        (deviceid, buildid, station, buildid, station));
+                        (deviceid, buildid, station, buildid, station))
             conn.commit()
         ok=""
 
@@ -139,7 +144,7 @@ try:
     elif service == "starttest":
         deviceid = require("deviceid")
         command = require("command")
-        testname = form.getvalue("testname");
+        testname = form.getvalue("testname")
         if testname is None: testname=""
 
         cur.execute("select phase from devices where deviceid=%s and state='TESTING' and station=%s", (deviceid, station))
@@ -147,7 +152,7 @@ try:
         phase = cur.fetchone()[0]
         cur.execute("insert into tests (deviceid, station, phase, command, testname) values (%s, %s, %s, %s, %s) returning id", (deviceid, station, phase, command, testname))
         conn.commit()
-        ok = cur.fetchone()[0]; # returns the test id
+        ok = cur.fetchone()[0] # returns the test id
 
     elif service == "endtest":
         testid = require("testid")
@@ -198,6 +203,11 @@ try:
         cur.execute("select %s from provisioned where deviceid = %%s" % (key,),(deviceid,))
         ok = cur.fetchone()[0]
 
+    elif service == "fixture":
+        # this is invoked by pionic during startup, if a string is returned
+        # then it will download fixture.tar.gz and run the named script inside
+        ok=fixture
+
     else:
         raise Exception("Invalid service '%s'" % (service,))
 
@@ -205,8 +215,8 @@ try:
     print "Content-type: text/plain\n\n%s" % ok
 
 except Exception:
-    t,v,tb=sys.exc_info();
-    print "Status: 400 %s: %s (%d)\nContent-type: text/plain\n" % (t.name, str(v), tb.tb_lineno)
+    t,v,tb=sys.exc_info()
+    print "Status: 400 %s: %s (%d)\nContent-type: text/plain\n" % (str(t), str(v), tb.tb_lineno)
     # other output will appear if you use curl
     traceback.print_exc(file = sys.stdout)
     if station is not None: print "Station ID:",station
