@@ -95,11 +95,8 @@ try:
 
     if service == "download":
         buildid = require("buildid")
-        if buildid == ":fixture:":                                      # request from test fixture
-            print "Location: /download/fixture.tar.gz\n"                # redirect to the fixture tarball 
-        else:    
-            build = checkbuild(buildid)                                 # validate build
-            print "Location: /download/%s\n" % (build["filename"],)     # redirect to the build tarball
+        build = checkbuild(buildid)
+        print "Location: /download/%s\n" % (build["filename"],) # This actually redirects Apache, the client won't see it
         quit()
 
     elif service == "newdevice":
