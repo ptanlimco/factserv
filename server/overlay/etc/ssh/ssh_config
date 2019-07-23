@@ -57,6 +57,6 @@ Host *
     Compression yes
 
 # Don't check or save DUT keys
-Host DUTNET ts* !ts*.*
+Host DUT_NET ts* !ts*.*
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null

@@ -7,72 +7,76 @@ die() { echo $* >&2; exit 1; }
 here=${0%/*}
 source $here/install.cfg
 
-# make sure correct interfaces are defined
+if (($#)); then
+    # argument is -u?
+    (($# == 1)) && [[ $1 == -u ]] || die "Usage: $0 [-u]"
+
+    [ -f /etc/factory/config ] || die "Can't uninstall, try '$0'"
+
+    ifdown $dut_interface
+
+    # Delete overlay files
+    for f in $(find $here/overlay -type f,l -printf "%P\n"); do 
+        rm -f /$f 
+        
+        # restore originals from backup
+        ! [ -e /$f~ ] || cp -vP /$f~ /$f
+    done
+
+    # Delete etc/factory to show we did this
+    rm -rf etc/factory
+
+    echo "###################"
+    echo "Uninstall complete!"
+    exit 0    
+fi
+
+! [ -f /etc/factory/config ] || die "Already installed, try '$0 -u' first"
+
+# Verify interfaces
 [[ -e /sys/class/net/$factory_interface ]] || die "Invalid network interface $factory_interface"
 (($(cat /sys/class/net/$factory_interface/carrier 2>/dev/null))) || die "$factory_interface must be connected!"
 
 [[ -e /sys/class/net/$dut_interface ]] || die "Invalid network interface $dut_interface"
 ! (($(cat /sys/class/net/$dut_interface/carrier 2>/dev/null))) || die "$dut_interface must not be connected!"
 
-# install packages
+# Install packages
 export DEBIAN_FRONTEND=noninteractive
 apt update
 apt upgrade
 apt install -y apache2 arping curl dnsmasq elinks htop iptables-persistent mlocate net-tools postgresql psmisc python-psycogreen smartmontools sudo sysstat tcpdump tmux vim
 
-# copy files from overlay to root, make directories if needed, leave symlinks
-# intact
+# Copy overlay files to root, backup existing 
 for file in $(find $here/overlay -type f,l -printf "%P\n"); do
+    
+    # create directory if needed
     [[ -d /${file%/*} ]] || mkdir -v -p /${file%/*}
+
+    # copy with backup
     cp -v -P -b $here/overlay/$file /$file
+    
+    # also try to files
+    [ -h /$file ] || 
+    sed -i "s/FACTORY_INTERFACE/$factory_interface/g; 
+            s/DUT_INTERFACE/$dut_interface/g; 
+            s/DUT_IP/$dut_ip/g; 
+            s/DUT_NET/${dut_ip%.*}.*/g; 
+            s/ORGANIZATION/$organization/g;" /$file
 done
 
-# remember certain config
-cat <<EOT >>/etc/factory/config
-# this is a generated file, do no edit!
-factory_interface=$factory_interface
-dut_interface=$dut_interface
-dut_ip=$dut_ip
-EOT
-
-# patch configurations
-for f in /etc/network/interfaces.d/factory.conf /etc/ssh/ssh_config; do
-    sed -i "s/FACTIF/$factory_interface/g; s/DUTIF/$dut_interface/g; s/DUTIP/$dut_ip/g; s/DUTNET/${dut_ip%.*}.*/g" $f
-done
-
-# shows at login prompt
-cat <<EOT > /etc/issue
-\e{bold}\d \t
-Property of $organization
-Unauthorized access is prohibited
-$factory_interface address is \4{$factory_interface} (factory interface)
-$dut_interface address is \4{$dut_interface} (DUT interface)
-\e{reset}
-EOT
-
-# shows after login
-cat <<EOT > /etc/motd
-Property of $organization
-Unauthorized access is prohibited
-EOT
-
-# fix factory permissions
+# Fix permissions
 chown -R factory: ~factory/
 chmod -R go= ~factory/.ssh
 chown root:factory /var/www/html/downloads
 chmod 775 /var/www/html/downloads
 
-# configure postgresql
+echo "Configuring postgresql, ignore warnings on reinstall"
 su -lc "psql -f /etc/factory/schema.txt" postgres
 
 # configure Apache
 a2enmod cgi
 a2enmod ssl
 a2ensite default-ssl
-
-# configure dnsmasq
-ifup $dut_interface
-/etc/factory/update.dnsmasq
 
 # force UCT
 ln -sf /usr/share/zoneinfo/UCT /etc/localtime
@@ -118,5 +122,9 @@ ip6tables -F # flush everything
 ip6tables -P INPUT DROP
 ip6tables-save > /etc/iptables/rules.v6
 
-echo "######################"
-echo "Installation complete!"
+# configure dnsmasq
+ifup $dut_interface
+/etc/factory/update.dnsmasq
+
+echo "#################"
+echo "Install complete!"
