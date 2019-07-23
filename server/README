@@ -24,8 +24,9 @@ providing DHCP, DNS, and NAT.
 
 The server runs Debian Linux. 
 
-Start by downloading an ISO install image, e.g.
-https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-9.9.0-amd64-netinst.iso.
+Start by downloading the ISO install image from 
+https://cdimage.debian.org/cdimage/archive/9.9.0/amd64/iso-cd/debian-9.9.0-amd64-netinst.iso
+(later distributions have not been tested).
 
 Assuming the server can boot from USB, dd the image onto a USB stick.
 (Otherwise you'll have to create a CD/DVD.)
