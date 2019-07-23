@@ -11,9 +11,9 @@ if (($#)); then
     # argument is -u?
     (($# == 1)) && [[ $1 == -u ]] || die "Usage: $0 [-u]"
 
-    [ -f /etc/factory/config ] || die "Can't uninstall, try '$0'"
+    [ -f /etc/factory/installed ] || die "Can't uninstall, try '$0'"
 
-    ifdown $dut_interface
+    ifdown $dut_interface || true
 
     # Delete overlay files
     for f in $(find $here/overlay -type f,l -printf "%P\n"); do 
@@ -31,7 +31,7 @@ if (($#)); then
     exit 0    
 fi
 
-! [ -f /etc/factory/config ] || die "Already installed, try '$0 -u' first"
+! [ -f /etc/factory/install ] || die "$(cat /etc/factory/install) is currently installed, try '$0 -u' first"
 
 # Verify interfaces
 [[ -e /sys/class/net/$factory_interface ]] || die "Invalid network interface $factory_interface"
@@ -63,6 +63,8 @@ for file in $(find $here/overlay -type f,l -printf "%P\n"); do
             s/DUT_NET/${dut_ip%.*}.*/g; 
             s/ORGANIZATION/$organization/g;" /$file
 done
+
+git rev-parse HEAD --abbrev-ref HEAD > /etc/factory/installed
 
 # Fix permissions
 chown -R factory: ~factory/
