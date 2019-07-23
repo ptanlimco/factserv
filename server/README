@@ -1,0 +1,178 @@
+This document describes how to configure a factory diagnostic server.
+
+To proceed you must be familiar with linux command line operation and common
+utilities.
+
+The server you select should have at least 512GB server-grade hard disk and two
+gigabit ethernet interfaces. It may run for months or years without direct
+supervision, so quality hardware is important. However system performance is
+NOT important, the server does not require high-end graphics or large amounts
+of memory. Any low-end rack mount server from Dell with a server-grade hard
+disk will be fine.
+
+If the server supports hardware RAID 1 you may need to enable it in system
+BIOS, not in scope of this document. Bear in mind that it may not be possible
+for linux to monitor the health of a hardware raid array.
+
+If BIOS shows memory allocated for GPU it can be set to the minimum possible
+size.
+
+One of the network interfaces will be the "factory" interface, attached to the
+factory LAN.  The other will be the "dut" interface, attached (via a switch) to
+the test stations. The server acts as the gateway for the dut network,
+providing DHCP, DNS, and NAT.
+
+The server runs Debian Linux. 
+
+Start by downloading an ISO install image, e.g.
+https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-9.9.0-amd64-netinst.iso.
+
+Assuming the server can boot from USB, dd the image onto a USB stick.
+(Otherwise you'll have to create a CD/DVD.)
+
+Attach keyboard, display and ethernet to server. Mouse is not required.
+Whichever ethernet you attach will become the factory interface, it's a good
+idea to mark this for future reference. The install network must supply DHCP
+and internet access. 
+
+Install Debian:
+
+    Boot the server from the prepared USB stick (or CD/DVD). This may require
+    entering BIOS and selecting the boot device. 
+
+    When the Debian install menu appears, press down arrow and select
+    "Install".  Do not select "Graphical Install". 
+
+    Select the default for language, country, keymap, and network.
+
+    Set hostname to "factory". 
+
+    Set domain name to "localdomain".
+
+    Set a root password. Password strength is not super important since the
+    only access to the system is via ssh key.  
+
+    Leave the full name for new user blank.
+
+    Set the username to "factory". Again, the password strength is not
+    important, just using "factory" is acceptable. 
+    
+    Set the default time zone (it will be changed to UCT later).
+
+    If the hard disk has an existing non-UEFI bootloader you will be asked if
+    you want to continue to use it. You do not.
+
+    Select partitioning method "Guided - use entire disk"
+
+    Select the hard drive to be partitioned (probably "sda", but this may be
+    different if hardware raid is enabled).
+
+    Select "All files in one paritition".
+
+    Select "Write changes to disk".
+
+    You will be informed that the hard drive is about to be "destroyed" with
+    three new partitions. Select "Yes".
+
+    Wait several minutes while the base system is installed.
+
+    Select "United States".
+    
+    Select "ftp.us.debian.org". 
+
+    Enter proxy information if necessary, but note the proxy will need to be
+    disabled once the server is installed in the factory.
+
+    Wait several more minutes.
+
+    When asked about "popularity-contest", select "No".
+
+    When prompted for "Software selection" make sure only "SSH server" and
+    "standard system utilities" are starred, then press tab, enter. A desktop
+    environment must not be selected.
+
+    Wait several more minutes.
+
+    Finally the "Installation complete" screen will appear. Remove install
+    media and hit enter.
+
+The system will reboot. When the "factory login:" prompt appears, log in as
+"factory":
+
+First become root:
+
+    > su - (enter the root password)
+
+(Note the use of '>' in this document indicates a command to be entered.)
+
+Check network interfaces:    
+    
+    > ip a
+
+This should list two interfaces (besides "lo"). The inteface names are
+hardware-specific, for example "eno1" and "eno2". One of the interfaces will
+Have an "inet" address which was assigned by DHCP, this is one you plugged
+ethernet cable into, and becomes the factory interface.  The other will not
+have an address, this is the DUT interface. 
+
+Make a note of the interface names and the current IP address.
+
+(At this point you may find it easiesr to proceed after ssh'ing to the factory
+server rather than continue to use the console).
+
+Install git and download the factserv repo:
+
+    > apt install -y git
+    > git clone https://github.com/glitchub/factserv
+
+Edit the install configuration script:
+    
+    > cd factserv/server
+    > nano install.cfg (or vi, at your discretion)
+
+Review the install configuration parameters, you may need to alter
+"factory_interface" and "dut_interface" to reflect the results of 'ip a'
+performed above, you will certainly want to change "organization".
+
+Once the configuration is complete, run the installer:
+
+    > ./install.sh
+
+This will generate quite a bit of output, finally ending with "Install
+complete". If you are asked any questions, type or select "Yes".
+
+Reboot the system.
+    
+    > reboot
+
+After reboot, note the IP address of both interfaces appear on the login
+screen.
+
+On your workstation, use the Firefox browser to browse to https://ip.ad.re.ss
+and you'll get a certificate error. Add an exception to access the "Factory
+Server" page. (Other browsers may also be used, but it's more difficult to
+configure them for self-signed certificate).
+
+To use ssh, copy the file server/insecure_factory_rsa_id to your workstation
+~/.ssh directory, and chmod 600. Specify it as follows:
+
+    you@yourpc$ ssh -i ~/.ssh/insecure_factory_rsa_id factory@ip.ad.re.ss
+
+The ssh key passphase is "insecure".
+
+################################### NOTE ###################################   
+
+This process installs insecure ssh and ssl keys by default, to allow
+preliminary configuration and testing. They are insecure because they are
+published in this repo!
+
+Before deploying the server to the factory, production keys must be installed.
+
+The production keys are HIGHLY CONFIDENTIAL and secure practices must be used
+when handling them.
+
+All production servers use the same ssl key. They can use different ssh keys,
+although this may become a key management issue.
+
+Key generation process is not in scope of this document.
+

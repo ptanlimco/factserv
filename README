@@ -1,5 +1,59 @@
-Factory server configuration and support
+This repo provides factory diagnostic infrastructure for embedded systems.
 
-server directory contains files to be installed on top of debian 9, see install.txt
+Theory of operation:
 
-client directory contains basic client code to interact with server and cgi's
+    The factory server has two ethernet interfaces, one that goes to the world
+    (via the factory) and one that goes DUTs via a switch. 
+
+    DUTs attach to the DUT subnet via pionic test controller or USB ethernet
+    switch.
+
+    The DUT boots normal production code, allowing testing of DUTs even if
+    secure boot is enabled.
+
+    At some point early in the boot, the normal production code executes the
+    'startdiag.sh'. The script tries to detect if it is in the factory, either
+    by listening for an ethernet "beacon" or by performing a specific HTTP
+    fetch.
+
+    If the script decides that DUT really is in the factory, it downloads a
+    tarball from the factory server via https. The factory server SSL key is
+    known to the startdiag.sh script in advance, if the key is invalid then
+    diagnostics will not proceed. This prevents exploitation of this mechanism
+    in the field. (Security of the factory SSL key is of utmost importance.)
+
+    Otherwise the files in the tarball are extracted and the DUT invokes the
+    dodiag.sh script contained therein. dodiag.sh can do whatever it wishes to
+    test the system, but typically it passes control to a dodiag executable which in
+    turn executes various tests that were included in the downloaded tarball.
+
+    The server maintains a DHCP server which assigns static IPs to pre-defined
+    MAC address of pionic controller or USB ethernet dongle. The last octet of
+    the IP address is the test station ID.
+
+    It's important to note that the DUT tests itself, the external systems only
+    supply support for the test code running on the DUT.
+
+    The server provides access to a CGI that is invoked by the DUT during
+    testing to manipulate test status and output data. The server also provides
+    a set of CGIs that can be invoed by factory personnel to look at diagnostic
+    results and configure the server.
+    
+    The server runs a DHCP server on the DUT interface which assigned static
+    IPs to the pre-defined MAC address of pionic controller or USB ethernet
+    dongle.  The last octet of the IP address is the test station ID.
+
+    The server acts as a NAT router to allow DUTs (and pionic controllers) to
+    access the internet for name resolution, NTP, etc.
+
+
+The 'server' directory contains everything necessary to configure the factory server. See the README in that directory.
+
+The 'client' directory contains example code that runs on DUT and interacts
+with server and CGIs.
+
+    startdiag.sh - this is code that is shipped with the production code and tries to detect factory environment during startup.
+
+    dodiag,sh - this goes in the diagnostic tarball, it is started by startdiag.sh after the tarball is downloaded. It prepares the DUT to perform diagnostics.
+
+    dodiag - this also goes in the diagnostics tarball, it invokes the various tests and interacts with the factory server.

@@ -10,7 +10,7 @@
 #
 # Additionally, root must have select privilege on the stations table.
 #
-# Also the file /etc/factory/config must exist
+# Also the file /etc/factory/config must define $dut_interface and $dut_ip
 
 me=${0##*/}
 
