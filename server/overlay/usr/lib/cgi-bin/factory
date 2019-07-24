@@ -96,7 +96,7 @@ try:
     if service == "download":
         buildid = require("buildid")
         build = checkbuild(buildid)
-        print "Location: /download/%s\n" % (build["filename"],) # This actually redirects Apache, the client won't see it
+        print "Location: /download/%s.tar.gz\n" % buildid # This actually redirects Apache, the client won't see it
         quit()
 
     elif service == "newdevice":

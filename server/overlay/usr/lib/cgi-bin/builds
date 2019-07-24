@@ -2,7 +2,8 @@
 
 # Configure test station ID vs MAC address and restart dnsmasq.
 
-import traceback, re, cgi, sys, psycopg2, os, base64
+import traceback, re, cgi, sys, psycopg2, os, base64, datetime
+
 
 # return escape string
 def escape(s):
@@ -38,6 +39,14 @@ def table(htmlclass, rows):
 
 maxstations=50
 
+def fileinfo(buildid):
+    tarball="/var/www/html/downloads/%s.tar.gz" % buildid
+    try: 
+        (size, mtime)=os.stat(tarball)[6:9:2]
+        return "<div style='color:white; background-color:green'>%s: %d bytes</div>" % (datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S"), size)
+    except:  
+        return "<div style='color:white; background-color:red'>NO FILE</div>"
+
 # require supervisor password
 try:
     if base64.decodestring(os.environ["HTTP_AUTHORIZATION"].split()[1]) != "supervisor:superx5":
@@ -52,12 +61,11 @@ try:
     # return html form with specified defaults
     def makeform(values):
         if not values:
-            values=tuple(None for n in range(4+(maxstations*4)))
+            values=tuple(None for n in range(3+(maxstations*4)))
 
         return html(table("form",[
             ("Build ID",             "<input name=buildid type=text value='%s'>"),
             ("Allow provisioning?",  "<input name=provision type=checkbox value=true %s>"),
-            ("Download filename",    "<input name=filename type=text value='%s'>"),
             ("Phase 1 stations",    ''.join("<input name=phase1-%d type=text size=3 value='%%s'>" % x for x in range(1,maxstations+1))),
             ("Phase 2 stations",    ''.join("<input name=phase2-%d type=text size=3 value='%%s'>" % x for x in range(1,maxstations+1))),
             ("Phase 3 stations",    ''.join("<input name=phase3-%d type=text size=3 value='%%s'>" % x for x in range(1,maxstations+1))),
@@ -66,7 +74,7 @@ try:
 
     # return list of values created by the above form
     def formvalues(form):
-        return tuple([form.getvalue("buildid"), form.getvalue("provision"), form.getvalue("filename")]+\
+        return tuple([form.getvalue("buildid"), form.getvalue("provision")]+\
                      [form.getvalue("phase1-%d" % x) for x in range(1,maxstations+1)]+\
                      [form.getvalue("phase2-%d" % x) for x in range(1,maxstations+1)]+\
                      [form.getvalue("phase3-%d" % x) for x in range(1,maxstations+1)]+\
@@ -110,12 +118,12 @@ try:
                 break
             elif action[0] == 'insert':
                 validate(form)
-                cur.execute("insert into builds (buildid, provision, filename,"+\
+                cur.execute("insert into builds (buildid, provision,"+\
                 "".join("phase1[%d]," % x for x in range(1,maxstations+1))+\
                 "".join("phase2[%d]," % x for x in range(1,maxstations+1))+\
                 "".join("phase3[%d]," % x for x in range(1,maxstations+1))+\
                 "".join("phase4[%d]," % x for x in range(1,maxstations+1))+\
-                "comment) values (%s,%s,%s," +\
+                "comment) values (%s,%s," +\
                           "%s," * maxstations +\
                           "%s," * maxstations +\
                           "%s," * maxstations +\
@@ -129,7 +137,7 @@ try:
                     cur.execute("delete from builds where buildid=%s", (action[1],));
                     conn.commit()
             elif action[0] == "edit":
-                cur.execute("select buildid, case when provision then 'checked' else '' end, filename," +\
+                cur.execute("select buildid, case when provision then 'checked' else '' end," +\
                     "".join("phase1[%d]," % x for x in range(1,maxstations+1)) +\
                     "".join("phase2[%d]," % x for x in range(1,maxstations+1)) +\
                     "".join("phase3[%d]," % x for x in range(1,maxstations+1)) +\
@@ -144,7 +152,7 @@ try:
                     """,(row[0],))
                 break
             elif action[0] == "clone":
-                cur.execute("select case when provision then 'checked' else '' end, filename," +\
+                cur.execute("select case when provision then 'checked' else '' end," +\
                     "".join("phase1[%d]," % x for x in range(1,maxstations+1)) +\
                     "".join("phase2[%d]," % x for x in range(1,maxstations+1)) +\
                     "".join("phase3[%d]," % x for x in range(1,maxstations+1)) +\
@@ -160,7 +168,7 @@ try:
                 break
             elif action[0] == 'update':
                 validate(form)
-                cur.execute("update builds set buildid=%s, provision=%s, filename=%s," +\
+                cur.execute("update builds set buildid=%s, provision=%s," +\
                     "".join("phase1[%d]=%%s," % x for x in range(1,maxstations+1)) +\
                     "".join("phase2[%d]=%%s," % x for x in range(1,maxstations+1)) +\
                     "".join("phase3[%d]=%%s," % x for x in range(1,maxstations+1)) +\
@@ -171,7 +179,7 @@ try:
                 raise Exception("Invalid action = '%s'" % action);
 
         # here, generate thge default page contentt
-        cur.execute("select buildid, case when provision then 'Yes' else 'No' end, filename,"+\
+        cur.execute("select buildid, case when provision then 'Yes' else 'No' end,"+\
             "".join("phase1[%d]," % x for x in range(1,maxstations+1))+\
             "".join("phase2[%d]," % x for x in range(1,maxstations+1))+\
             "".join("phase3[%d]," % x for x in range(1,maxstations+1))+\
@@ -179,11 +187,17 @@ try:
             "comment from builds order by buildid")
         if cur.rowcount > 0:
             rows=cur.fetchall(); # get list of tuples
+
             content += html(
                 table("data",
-                    [("Build ID","Provision?","Filename","Phase 1",         "Phase 2",         "Phase 3",        "Phase 4",        "Comment", "&nbsp;")]+
-                    [("%s",     "%s",         "%s",      "%s"*maxstations,  "%s"*maxstations,  "%s"*maxstations, "%s"*maxstations, "%s",
-                      html("<form method=post><button name=action value='edit=%s'>Edit</button> <button name=action value='del=%s'>Del</button> <button name=action value='clone=%s'>Clone</button></form>",(row[0],row[0],row[0]))) for row in rows]
+                    [("Build ID","Provision?", "Phase 1",         "Phase 2",         "Phase 3",        "Phase 4",        "Comment", "Tarball", "&nbsp;")]+
+                    [("%s",     "%s",          "%s "*maxstations, "%s "*maxstations, "%s "*maxstations,"%s "*maxstations,"%s",      
+                      fileinfo(row[0]),
+                      html("""<form method=post>
+                              <button name=action value='edit=%s'>Edit</button> 
+                              <button name=action value='del=%s'>Del</button> 
+                              <button name=action value='clone=%s'>Clone</button>
+                              </form>""",(row[0],row[0],row[0]))) for row in rows]
                     ),tuple([r for row in rows for r in row]))
         else:
             content += 'No builds defined'
@@ -208,7 +222,12 @@ try:
     </style>
     </head>
     <body>
-    <h2>Build Manager</h2>""",None) + content + "</body></html>"
+    <div>
+    <h2 style="float:left">Build Manager</h2>
+    <form action="/"><input type="submit" value="Home" style="float:right; position:relative; top:15px"/></form>
+    </div>
+    <div style="clear:both"/>
+    """,None) + content + "</body></html>"
 
 except Exception as e:
     print "Content-type: text/plain; charset=utf-8\n\nAn error has occurred"

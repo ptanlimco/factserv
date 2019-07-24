@@ -136,7 +136,11 @@ try:
     </style>
     </head>
     <body>
-    <h2>Station Manager</h2>
+    <div>
+    <h2 style="float:left">Station Manager</h2>
+    <form action="/"><input type="submit" value="Home" style="float:right; position:relative; top:15px"/></form>
+    </div>
+    <div style="clear:both"/>
     """,None) + content + "</body></html>"
 
 except Exception as e:

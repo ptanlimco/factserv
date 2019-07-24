@@ -28,20 +28,21 @@ grant select, update, insert, delete, trigger on stations to factory;
 create table builds (
     buildid varchar primary key,
     provision boolean default false,
-    filename varchar not null,
     phase1 int array,
     phase2 int array,
     phase3 int array,
     phase4 int array,
-    comment varchar		
+    comment varchar
 );
+-- legacy
+alter table builds drop "filename";
 grant select, update, insert, delete, trigger on builds to factory;
 
 -- test state, per device, installed by various process CGIs
 create type states as enum('TESTING','FAILED','PASSED','COMPLETE');
 create table devices (
     deviceid varchar primary key,
-    buildid varchar,	
+    buildid varchar,
     created timestamp not null default uct(),
     updated timestamp not null default uct(),
     state states not null default 'TESTING',

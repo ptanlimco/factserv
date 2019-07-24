@@ -184,7 +184,12 @@ try:
     </style>
     </head>
     <body>
-    <h2>Test Status</h2>""",None) + content + "</tt></body></html>"
+    <div>
+    <h2 style="float:left">Test Status</h2>
+    <form action="/"><input type="submit" value="Home" style="float:right; position:relative; top:15px"/></form>
+    </div>
+    <div style="clear:both"/>
+    """,None) + content + "</tt></body></html>"
 
 except:
     print "Content-type: text/plain\n\nAn error has occurred"
