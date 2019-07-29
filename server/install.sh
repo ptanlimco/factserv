@@ -44,7 +44,7 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 apt update
 apt upgrade
-apt install -y apache2 arping curl dnsmasq elinks htop iptables-persistent mlocate net-tools postgresql psmisc python-psycogreen smartmontools sudo sysstat tcpdump tmux vim
+apt install -y apache2 arping curl dnsmasq htop iptables-persistent links mlocate net-tools postgresql psmisc python-psycogreen resolvconf smartmontools sudo sysstat tcpdump tmux vim
 
 # Copy overlay files to root, backup existing 
 for file in $(find $here/overlay -type f,l -printf "%P\n"); do
