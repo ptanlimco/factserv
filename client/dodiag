@@ -6,7 +6,7 @@ import traceback, os, sys, httplib, urllib, getopt, subprocess, threading, signa
 
 buildID=None                    # must be specified on command line
 deviceID=None                   # can be specified, otherwise we'll try to discover it
-pionicIP="192.168.111.1"        # IP address of pionic controller
+pionicIP="192.168.111.1"        # IP address of pionic controller-p
 script_path="."                 # Path to phaseX scripts
 
 # Things we say, in various lanuages
@@ -134,9 +134,9 @@ try:
         print "Provisioning deviceID"
         factory("newdevice",{"buildid": buildID})
         badge("\n".join(language(scan_barcode)), fg="black", bg="yellow")
-        while True:
-           deviceID=pionic("getbar?poll&timeout=4") # poll with shortish timeout
-           if deviceID != "": break
+        deviceID=pionic("getbar?flush&timeout=3")
+        while not deviceID:
+           deviceID=pionic("getbar?timeout=3") # poll with shortish timeout
         badge(None)
 	print "Got %s, updating server" % deviceID
         factory("newdevice",{"deviceid":deviceID, "buildid": buildID})
@@ -188,7 +188,7 @@ try:
             if not command: raise ParseFail("expected a command string")
             # catch too many ::'s
             if command.startswith(":"): raise ParseFail("command can't start with colon")
-            operation.append({"op":"test", "name":testname, "timeout":timeout, "command":command})
+            operation.append({"op":"test", "testname":testname, "timeout":timeout, "command":command})
         elif "{" in l:
             # count {
             t=l.split("{",1);
@@ -198,7 +198,7 @@ try:
             except ValueError:
                 raise ParseFail("loop count is invalid")
             operation.append({"op":"push", "count":count})
-            pushed.append=len(operation)
+            pushed.append(len(operation))
         elif l == "}":
             if not pushed: raise ParseFail("'unexpected '}'");
             operation.append({"op":"dbnz", "index":pushed.pop()});
@@ -221,16 +221,17 @@ try:
     while index < len(operation):
         op=operation[index]["op"]
         if op == "test":
-            testname=operation[op]["testname"]
-            timeout=operation[op]["timeout"]
-            command=operation[op]["command"]
-            report(("\n".join(language(test_in_progress))+"\n\n"+
-                "Device ID : %s\n"+
-                "Build ID  : %s\n"+
-                "Phase     : %s\n"+
-                "Test      : %s\n"+
-                "Timeout   : %s\n"+
-                "Command   : %s\n") % (deviceID, buildID, phase, testname, timeout, command))
+            testname=operation[index]["testname"]
+            timeout=operation[index]["timeout"]
+            command=operation[index]["command"]
+            report("\n".join(language(test_in_progress)) +
+                   "\n\n" +
+                   "Device ID : %s\n" % deviceID +
+                   "Build ID  : %s\n" % buildID +
+                   "Phase     : %s\n" % phase +
+                   "Test      : %s\n" % testname +
+                   "Timeout   : %s\n" % timeout +
+                   "Command   : %s\n" % command )
             testid=factory("starttest", {"deviceid":deviceID, "testname":testname, "command":command})
             status, stdout=perform(command, timeout)
             factory("endtest", {"deviceid":deviceID, "testid":testid, "status":status, "stdout":stdout})
@@ -238,17 +239,17 @@ try:
                 if not flags["IgnoreFail"]: raise TestFail("'%s' exit status %d" % (testname, status))
                 flags["Failed"]=1 # else remember it for later
         elif op == "push":
-            pushed.append(operation[op]["count"])
+            pushed.append(operation[index]["count"])
         elif op == "dbnz":
             pushed[-1] -= 1;
             if pushed[-1]:
-                index=operation[op]["index"]-1 # will be incremented soon
+                index=operation[index]["index"]-1 # will be incremented soon
             else:
                 pushed.pop()
         elif op == "set":
-            flags[operation[op]["flag"]]=True
+            flags[operation[index]["flag"]]=True
         elif op == "clear":    
-            flags[operation[op]["flag"]]=False
+            flags[operation[index]["flag"]]=False
         else:
             raise Exception("shouldn't get here")
         # advance to next operation
@@ -259,11 +260,14 @@ try:
     
     # ok, we're done!
     factory("enddiag", {"deviceid":deviceID})
-    badge("\n".join(language(test_passed))+"\n"+deviceID, bg="green")
+    report("\n".join(language(test_passed)) +
+           "\n\n" +
+           "Device ID : %s\n" % deviceID +
+           "Build ID  : %s\n" % buildID +
+           "Phase     : %s\n" % phase, bg="green");
 
 except:
     t,v,tb=sys.exc_info()
     traceback.print_exc()
     report("\n".join(language(test_failed))+"\n\n%s@%d: %s" % (t.__name__,tb.tb_lineno,str(v)), bg="red", fg="white")
     sys.exit(1)
-
